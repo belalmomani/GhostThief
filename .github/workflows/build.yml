@@ -1,0 +1,71 @@
+name: Build APK
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Tests + Debug APK (noads)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      # اختياري: إن أضفتَ Secret باسم GOOGLE_SERVICES_JSON_B64 يُفعَّل Firebase في البناء.
+      - name: Optional Firebase config
+        env:
+          GS_JSON_B64: ${{ secrets.GOOGLE_SERVICES_JSON_B64 }}
+        run: |
+          if [ -n "$GS_JSON_B64" ]; then echo "$GS_JSON_B64" | base64 -d > app/google-services.json; echo "Firebase config added"; else echo "No Firebase config: local-only build"; fi
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.7
+
+      - name: Unit tests
+        run: gradle --no-daemon testNoadsDebugUnitTest
+
+      - name: Build debug APK
+        run: gradle --no-daemon assembleNoadsDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: GhostThief-debug-apk
+          path: app/build/outputs/apk/noads/debug/*.apk
+          if-no-files-found: error
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: app/build/reports/tests/
+          if-no-files-found: ignore
+
+  build-ads:
+    name: Optional Start.io test build
+    runs-on: ubuntu-latest
+    continue-on-error: true   # لا يُفشل المشروع إن تغيّر SDK الإعلانات
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.7
+      - run: gradle --no-daemon assembleAdsDebug
+      - uses: actions/upload-artifact@v4
+        with:
+          name: GhostThief-ads-test-apk
+          path: app/build/outputs/apk/ads/debug/*.apk
+          if-no-files-found: ignore

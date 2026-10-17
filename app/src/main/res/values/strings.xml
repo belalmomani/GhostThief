@@ -1,0 +1,64 @@
+<resources>
+    <string name="app_name">Ghost Thief</string>
+    <string name="app_title_ar">الحرامي الشبح</string>
+    <string name="start_play">ابدأ اللعب</string>
+    <string name="stop_play">إيقاف اللعب</string>
+    <string name="play_stopped">تم إيقاف اللعب والوضع العائم</string>
+    <string name="floating_mode">الوضع العائم فوق التطبيقات</string>
+    <string name="floating_desc">يظهر الحرامي والسجن كعنصرين صغيرين فوق التطبيقات الأخرى. يمكنك إيقافه في أي وقت.</string>
+    <string name="show_jail">إظهار السجن</string>
+    <string name="stats">مرات القبض: %1$d   •   النقاط: %2$d   •   الإنجازات: %3$d</string>
+    <string name="settings">الإعدادات</string>
+    <string name="privacy_policy">سياسة الخصوصية</string>
+    <string name="about">حول اللعبة</string>
+    <string name="back">رجوع</string>
+    <string name="hide_show_jail">السجن</string>
+    <string name="overlay_dialog_title">إذن العرض فوق التطبيقات</string>
+    <string name="overlay_dialog_msg">لإظهار الحرامي فوق التطبيقات الأخرى يحتاج Android إلى إذنك. سننقلك إلى إعدادات النظام لتفعّل الإذن بنفسك. لا نقرأ شاشتك ولا نراقب تطبيقاتك، ويمكنك الإيقاف بزر الإغلاق في النافذة أو من هنا.</string>
+    <string name="continue_btn">متابعة</string>
+    <string name="cancel">إلغاء</string>
+    <string name="overlay_needs_permission">فعّل إذن «العرض فوق التطبيقات الأخرى» ثم ارجع إلى اللعبة</string>
+    <string name="overlay_failed">تعذّر تشغيل الوضع العائم</string>
+    <string name="notif_channel">الوضع العائم</string>
+    <string name="notif_title">الحرامي الشبح يعمل فوق التطبيقات</string>
+    <string name="notif_text">اضغط «إيقاف» لإغلاق الوضع العائم</string>
+    <string name="notif_stop">إيقاف</string>
+
+    <string name="msg_caught">أمسكته! +%1$d نقطة 🎉</string>
+    <string name="msg_caught_bonus">مكافأة كبيرة! +%1$d نقطة 🌟</string>
+    <string name="msg_achievement">إنجاز جديد! 🏆</string>
+    <string name="msg_circle_failed">قريب جداً! لفّ حوله دورة كاملة</string>
+    <string name="msg_escaped">هرب الحرامي من السجن! 🏃</string>
+    <string name="msg_try_again">أفلت منك! حاول مرة أخرى</string>
+
+    <string name="s_speed">سرعة الحركة</string>
+    <string name="s_volume">مستوى الصوت</string>
+    <string name="s_jail_duration">مدة السجن</string>
+    <string name="s_jail_corner">مكان السجن</string>
+    <string name="s_sound">تشغيل الأصوات</string>
+    <string name="s_effects">المؤثرات البصرية</string>
+    <string name="s_timer">إظهار عدّاد السجن</string>
+    <string name="s_cloud">المزامنة السحابية (Firebase)</string>
+    <string name="s_ads">الإعلانات</string>
+    <string name="s_reset">إعادة ضبط التقدم</string>
+    <string name="s_reset_confirm">سيتم حذف النقاط والإنجازات وعدد مرات القبض. هل أنت متأكد؟</string>
+    <string name="s_reset_yes">نعم، احذف</string>
+    <string name="s_reset_done">تمت إعادة الضبط</string>
+    <string name="s_ads_unavailable">غير متوفرة في هذه النسخة</string>
+    <string name="s_cloud_disabled">المزامنة متوقفة</string>
+    <string name="s_cloud_not_configured">Firebase غير مضبوط: اللعبة تعمل محلياً بالكامل</string>
+    <string name="s_cloud_syncing">جارٍ المزامنة…</string>
+    <string name="s_cloud_synced">تمت المزامنة</string>
+    <string name="s_cloud_pending">لا يوجد اتصال: ستتم المزامنة لاحقاً</string>
+    <string name="s_sync_now">زامن الآن</string>
+    <string name="s_cloud_status">حالة السحابة: %1$s</string>
+    <string name="corner_tr">أعلى اليمين</string>
+    <string name="corner_tl">أعلى اليسار</string>
+    <string name="corner_br">أسفل اليمين</string>
+    <string name="corner_bl">أسفل اليسار</string>
+    <string name="min_fmt">%1$d دقيقة</string>
+    <string name="hour_fmt">ساعة واحدة (افتراضي)</string>
+    <string name="hours_fmt">%1$d ساعات</string>
+
+    <string name="about_text">Ghost Thief — الحرامي الشبح\n\nلعبة أطفال مرحة: حرامي كرتوني لطيف يركض ويختبئ في مجلدات كرتونية. حاول الإمساك به بأن تلف إصبعك حوله دورة كاملة، أو اضغط عليه مطولاً ثم اسحبه إلى السجن في الزاوية.\n\nالمجلدات والملفات في اللعبة رسوم افتراضية فقط، ولا تقرأ اللعبة أي ملفات حقيقية على هاتفك.\n\nالإصدار %1$s</string>
+</resources>

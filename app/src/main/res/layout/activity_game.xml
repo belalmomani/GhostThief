@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="match_parent"
+    android:orientation="vertical" android:layoutDirection="rtl"
+    android:background="@drawable/bg_game" android:fitsSystemWindows="true">
+
+    <LinearLayout
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="horizontal" android:padding="8dp">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnBack"
+            android:layout_width="0dp" android:layout_height="56dp" android:layout_weight="1"
+            android:text="@string/back" android:textSize="17sp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnToggleJail"
+            style="@style/Widget.Material3.Button.TonalButton"
+            android:layout_width="0dp" android:layout_height="56dp" android:layout_weight="1"
+            android:layout_marginStart="8dp"
+            android:text="@string/hide_show_jail" android:textSize="17sp" />
+    </LinearLayout>
+
+    <com.ghostthief.game.game.GameView
+        android:id="@+id/gameView"
+        android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" />
+
+    <FrameLayout
+        android:id="@+id/adContainer"
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:visibility="gone" android:gravity="center" />
+</LinearLayout>

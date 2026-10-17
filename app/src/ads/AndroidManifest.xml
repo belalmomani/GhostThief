@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- لعبة موجهة للأطفال: تفعيل وضع child-directed في Start.io (حسب وثائقهم) -->
+        <meta-data
+            android:name="com.startapp.sdk.CHILD_DIRECTED"
+            android:value="true" />
+    </application>
+</manifest>

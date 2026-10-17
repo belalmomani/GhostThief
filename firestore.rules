@@ -1,0 +1,18 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // كل مستخدم يقرأ ويكتب وثيقته فقط، مع التحقق من شكل البيانات
+    match /users/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow create, update: if request.auth != null && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['captures','circleCaptures','points','achievements','resetEpoch','updatedAt'])
+        && request.resource.data.captures is int && request.resource.data.captures >= 0 && request.resource.data.captures < 10000000
+        && request.resource.data.circleCaptures is int && request.resource.data.circleCaptures >= 0
+        && request.resource.data.points is int && request.resource.data.points >= 0 && request.resource.data.points < 1000000000
+        && request.resource.data.resetEpoch is int && request.resource.data.resetEpoch >= 0
+        && request.resource.data.achievements is list && request.resource.data.achievements.size() <= 20;
+      allow delete: if false;
+    }
+    match /{document=**} { allow read, write: if false; }
+  }
+}
