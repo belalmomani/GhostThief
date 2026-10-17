@@ -79,7 +79,9 @@ class FloatingService : Service() {
         }
         val v = GameView(this).apply {
             arenaMode = true
-            engine = GameEngine(app.settings, app.progress)
+            engine = GameEngine(app.settings, app.progress).also { eng ->
+                if (app.settings.seekEnabled) com.ghostthief.game.game.HideSpots.loadAsync(this@FloatingService, app.settings.seekFolderUri) { eng.seekNames = it }
+            }
             onCloseRequested = { shutdown() }
         }
         try {

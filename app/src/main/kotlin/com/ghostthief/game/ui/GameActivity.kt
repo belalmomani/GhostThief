@@ -43,6 +43,9 @@ class GameActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         engine.applySettings()
+        if (app.settings.seekEnabled) {
+            com.ghostthief.game.game.HideSpots.loadAsync(this, app.settings.seekFolderUri) { names -> engine.seekNames = names }
+        } else engine.seekNames = emptyList()
         // لا نشغّل نسختين من اللعبة: نخفي النافذة العائمة أثناء وجود اللعبة في الواجهة
         if (app.settings.floatingEnabled) AndroidOverlayEnvironment.sendToService(this, FloatingService.ACTION_HIDE)
         gameView.start()

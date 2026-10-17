@@ -55,6 +55,9 @@ class ThiefBrain(
     /** أثناء محاولة اللف يبطئ الحرامي ليسهل الإمساك به. */
     var slowFactor = 1f
 
+    /** عند true يبقى الحرامي مختبئاً حتى يجده اللاعب (وضع البحث). */
+    var holdHidden = false
+
     /** يصبح true لمرة واحدة عندما يصل الحرامي إلى السجن بعد القبض. */
     var arrivedInJail = false
         private set
@@ -133,7 +136,7 @@ class ThiefBrain(
             ThiefState.HIDDEN -> {
                 alpha = 0f
                 hideFolderAlpha = 1f
-                if (stateTime >= stateDuration) {
+                if (stateTime >= stateDuration && !holdHidden) {
                     x = randomBetween(margin(), arenaW - margin())
                     y = randomBetween(margin(), arenaH - margin())
                     facing = if (x < arenaW / 2) 1 else -1
@@ -217,6 +220,15 @@ class ThiefBrain(
     /** يُستدعى لفرض الاختباء (للاختبار أو لمنطق مخصص). */
     fun forceHide() {
         if (state == ThiefState.RUN || state == ThiefState.STAND || state == ThiefState.LOOK) beginHide()
+    }
+
+    /** وضع البحث: يظهر الحرامي من مكان اختبائه الذي وجده اللاعب. */
+    fun revealAt(px: Float, py: Float) {
+        if (state != ThiefState.HIDDEN) return
+        holdHidden = false
+        x = px; y = py; hideX = px; hideY = py; hideVariant = 0
+        facing = if (px < arenaW / 2f) 1 else -1
+        enter(ThiefState.FADE_IN, 0.5f)
     }
 
     /** لمسة بسيطة على الحرامي: دهشة ثم هروب. */

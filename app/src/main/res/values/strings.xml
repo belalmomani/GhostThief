@@ -49,7 +49,8 @@
     <string name="s_cloud_not_configured">Firebase غير مضبوط: اللعبة تعمل محلياً بالكامل</string>
     <string name="s_cloud_syncing">جارٍ المزامنة…</string>
     <string name="s_cloud_synced">تمت المزامنة</string>
-    <string name="s_cloud_pending">لا يوجد اتصال: ستتم المزامنة لاحقاً</string>
+    <string name="s_cloud_pending">تعذّرت المزامنة (ستُعاد المحاولة لاحقاً)</string>
+    <string name="s_cloud_reason">السبب: %1$s</string>
     <string name="s_sync_now">زامن الآن</string>
     <string name="s_cloud_status">حالة السحابة: %1$s</string>
     <string name="corner_tr">أعلى اليمين</string>
@@ -57,8 +58,20 @@
     <string name="corner_br">أسفل اليمين</string>
     <string name="corner_bl">أسفل اليسار</string>
     <string name="min_fmt">%1$d دقيقة</string>
-    <string name="hour_fmt">ساعة واحدة (افتراضي)</string>
+    <string name="hour_fmt">ساعة واحدة</string>
+    <string name="min_default_fmt">%1$d دقيقة (افتراضي)</string>
     <string name="hours_fmt">%1$d ساعات</string>
 
     <string name="about_text">Ghost Thief — الحرامي الشبح\n\nلعبة أطفال مرحة: حرامي كرتوني لطيف يركض ويختبئ في مجلدات كرتونية. حاول الإمساك به بأن تلف إصبعك حوله دورة كاملة، أو اضغط عليه مطولاً ثم اسحبه إلى السجن في الزاوية.\n\nالمجلدات والملفات في اللعبة رسوم افتراضية فقط، ولا تقرأ اللعبة أي ملفات حقيقية على هاتفك.\n\nالإصدار %1$s</string>
+    <string name="msg_seek_start">الحرامي اختبأ! اضغط على المجلدات للبحث عنه 🔍</string>
+    <string name="msg_found">لقيته! +%1$d نقاط 🔍🎉</string>
+    <string name="msg_not_here">ليس هنا! جرّب مجلداً آخر</string>
+    <string name="s_jail_hint">نصيحة: اسحب السجن بإصبعك في اللعب لوضعه أينما تريد. اختيار زاوية هنا يعيده للزاوية.</string>
+    <string name="s_seek">وضع البحث: الاختباء في مجلدات الهاتف</string>
+    <string name="s_seek_pick">اختيار مجلد</string>
+    <string name="s_seek_clear">إلغاء ربط المجلد</string>
+    <string name="s_seek_folder">المجلد المختار: %1$s</string>
+    <string name="s_seek_none">لم تختر مجلداً بعد</string>
+    <string name="s_seek_dialog_title">اختيار مجلد للاختباء فيه</string>
+    <string name="s_seek_dialog_msg">سيفتح Android منتقي الملفات الرسمي لتختار مجلداً بنفسك. ستقرأ اللعبة أسماء العناصر داخله فقط لتعرضها كأماكن اختباء، ولن تقرأ محتوى أي ملف ولن تحفظ الأسماء ولن ترسلها. يمكنك إلغاء الربط في أي وقت.</string>
 </resources>

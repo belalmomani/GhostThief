@@ -18,6 +18,15 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var app: GhostThiefApp
     private lateinit var cloudStatus: TextView
     private val jailOptions = intArrayOf(1, 5, 15, 30, 60, 120, 180)
+    private lateinit var seekSwitch: MaterialSwitch
+    private lateinit var seekLabel: TextView
+    private val folderPicker = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri == null) { app.settings.seekEnabled = false; refreshSeek(); return@registerForActivityResult }
+        try { contentResolver.takePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (_: Throwable) {}
+        app.settings.seekFolderUri = uri.toString()
+        app.settings.seekEnabled = true
+        refreshSeek()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -62,11 +71,16 @@ class SettingsActivity : AppCompatActivity() {
 
         label(R.string.s_jail_duration)
         val durLabels = jailOptions.map {
-            when { it == 60 -> getString(R.string.hour_fmt); it > 60 -> getString(R.string.hours_fmt, it / 60); else -> getString(R.string.min_fmt, it) }
+            when {
+                it == com.ghostthief.game.data.Settings.DEFAULT_JAIL_MINUTES -> getString(R.string.min_default_fmt, it)
+                it == 60 -> getString(R.string.hour_fmt)
+                it > 60 -> getString(R.string.hours_fmt, it / 60)
+                else -> getString(R.string.min_fmt, it)
+            }
         }
         col.addView(Spinner(this).apply {
             adapter = ArrayAdapter(this@SettingsActivity, android.R.layout.simple_spinner_dropdown_item, durLabels)
-            val idx = jailOptions.indexOf(s.jailMinutes).let { if (it >= 0) it else jailOptions.indexOf(60) }
+            val idx = jailOptions.indexOf(s.jailMinutes).let { if (it >= 0) it else jailOptions.indexOf(com.ghostthief.game.data.Settings.DEFAULT_JAIL_MINUTES) }
             setSelection(idx)
             onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
                 override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) { s.jailMinutes = jailOptions[pos] }
@@ -80,10 +94,12 @@ class SettingsActivity : AppCompatActivity() {
             adapter = ArrayAdapter(this@SettingsActivity, android.R.layout.simple_spinner_dropdown_item, corners)
             setSelection(s.jailCorner)
             onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-                override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) { s.jailCorner = pos }
+                override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) { if (pos != s.jailCorner || s.jailPosX >= 0) { s.jailPosX = -1; s.jailPosY = -1; s.jailCorner = pos } }
                 override fun onNothingSelected(p: AdapterView<*>?) {}
             }
         })
+
+        col.addView(TextView(this).apply { text = getString(R.string.s_jail_hint); textSize = 13f; setTextColor(0xFF546E7A.toInt()) })
 
         toggle(R.string.s_sound, s.soundEnabled) { s.soundEnabled = it }
         toggle(R.string.s_effects, s.effectsEnabled) { s.effectsEnabled = it }
@@ -101,6 +117,21 @@ class SettingsActivity : AppCompatActivity() {
         }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, (52 * d).toInt()))
         cloudSwitch.isEnabled = true
 
+        // وضع البحث في مجلدات الهاتف (اختياري، بمنتقي الملفات الرسمي)
+        seekSwitch = toggle(R.string.s_seek, s.seekEnabled) { on ->
+            if (on && s.seekFolderUri.isNullOrBlank()) askPickFolder()
+            else { s.seekEnabled = on; refreshSeek() }
+        }
+        seekLabel = TextView(this).apply { textSize = 14f; setTextColor(0xFF546E7A.toInt()) }
+        col.addView(seekLabel)
+        col.addView(MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+            text = getString(R.string.s_seek_pick); setOnClickListener { askPickFolder() }
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, (52 * d).toInt()))
+        col.addView(MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+            text = getString(R.string.s_seek_clear); setOnClickListener { clearFolder() }
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, (52 * d).toInt()))
+        refreshSeek()
+
         val adsAvail = app.ads.available
         toggle(R.string.s_ads, s.adsEnabled && adsAvail, adsAvail) { s.adsEnabled = it }
         if (!adsAvail) col.addView(TextView(this).apply { text = getString(R.string.s_ads_unavailable); textSize = 13f })
@@ -113,6 +144,35 @@ class SettingsActivity : AppCompatActivity() {
         updateCloud()
     }
 
+    private fun askPickFolder() {
+        AlertDialog.Builder(this)
+            .setTitle(R.string.s_seek_dialog_title)
+            .setMessage(R.string.s_seek_dialog_msg)
+            .setPositiveButton(R.string.continue_btn) { _, _ -> folderPicker.launch(null) }
+            .setNegativeButton(R.string.cancel) { _, _ -> app.settings.seekEnabled = false; refreshSeek() }
+            .setOnCancelListener { app.settings.seekEnabled = false; refreshSeek() }
+            .show()
+    }
+
+    private fun clearFolder() {
+        val s = app.settings
+        s.seekFolderUri?.let { try { contentResolver.releasePersistableUriPermission(android.net.Uri.parse(it), android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (_: Throwable) {} }
+        s.seekFolderUri = null; s.seekEnabled = false
+        refreshSeek()
+    }
+
+    private fun refreshSeek() {
+        val s = app.settings
+        seekSwitch.setOnCheckedChangeListener(null)
+        seekSwitch.isChecked = s.seekEnabled
+        seekSwitch.setOnCheckedChangeListener { _, on ->
+            if (on && s.seekFolderUri.isNullOrBlank()) askPickFolder() else { s.seekEnabled = on; refreshSeek() }
+        }
+        val uri = s.seekFolderUri
+        seekLabel.text = if (uri.isNullOrBlank()) getString(R.string.s_seek_none)
+        else getString(R.string.s_seek_folder, com.ghostthief.game.game.HideSpots.folderLabel(uri))
+    }
+
     private fun updateCloud() {
         val st = when (app.sync.currentStatus()) {
             SyncStatus.DISABLED -> getString(R.string.s_cloud_disabled)
@@ -121,7 +181,9 @@ class SettingsActivity : AppCompatActivity() {
             SyncStatus.SYNCED -> getString(R.string.s_cloud_synced)
             SyncStatus.OFFLINE_PENDING -> getString(R.string.s_cloud_pending)
         }
-        cloudStatus.text = getString(R.string.s_cloud_status, st)
+        val reason = app.sync.lastError
+        cloudStatus.text = getString(R.string.s_cloud_status, st) +
+            if (reason != null && app.sync.currentStatus() == SyncStatus.OFFLINE_PENDING) "\n" + getString(R.string.s_cloud_reason, reason) else ""
     }
 
     private fun confirmReset() {

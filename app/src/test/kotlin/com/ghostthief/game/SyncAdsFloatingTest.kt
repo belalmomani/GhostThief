@@ -16,7 +16,7 @@ import org.junit.Test
 
 class SyncTest {
     @Test fun notEnabled_staysLocal() {
-        val env = Env(); val sm = SyncManager(env.repo, env.settings, FakeBackend())
+        val env = Env(); env.settings.cloudSyncEnabled = false; val sm = SyncManager(env.repo, env.settings, FakeBackend())
         sm.syncNow(); assertEquals(SyncStatus.DISABLED, sm.status)
     }
     @Test fun notConfigured_isReportedClearly() {
@@ -35,6 +35,7 @@ class SyncTest {
         val env = Env(); env.settings.cloudSyncEnabled = true; env.repo.recordCapture(false)
         val sm = SyncManager(env.repo, env.settings, FakeBackend(throwOnFetch = true))
         sm.syncNow(); assertEquals(SyncStatus.OFFLINE_PENDING, sm.status); assertEquals(1, env.repo.load().captures)
+        assertNotNull(sm.lastError)
     }
     @Test fun repeatedSync_doesNotDuplicatePoints() {
         val env = Env(); env.settings.cloudSyncEnabled = true; env.repo.recordCapture(false)

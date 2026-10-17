@@ -106,6 +106,9 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
             GameMessage.CIRCLE_FAILED -> context.getString(R.string.msg_circle_failed)
             GameMessage.ESCAPED -> context.getString(R.string.msg_escaped)
             GameMessage.TRY_AGAIN -> context.getString(R.string.msg_try_again)
+            GameMessage.SEEK_START -> context.getString(R.string.msg_seek_start)
+            GameMessage.FOUND -> context.getString(R.string.msg_found, points)
+            GameMessage.NOT_HERE -> context.getString(R.string.msg_not_here)
         }
         post {
             msgText = text; msgLife = 2.4f
@@ -113,6 +116,7 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
                 GameMessage.CAUGHT, GameMessage.CAUGHT_BONUS -> burst(e.jailCenterX(), e.jailCenterY(), true)
                 GameMessage.CIRCLE_FAILED, GameMessage.TRY_AGAIN -> burst(e.brain.x, e.brain.y, false)
                 GameMessage.ESCAPED -> burst(e.jailCenterX(), e.jailCenterY(), false)
+                GameMessage.FOUND -> burst(e.brain.x, e.brain.y, true)
                 else -> {}
             }
         }
@@ -182,11 +186,31 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
                 drawSprite(c, sp.ghost, x, y, 1f, flip, 4f * a * (1f - a))
                 drawFolder(c, sp, b.hideX, b.hideY, b.hideVariant, b.hideFolderAlpha)
             }
-            ThiefState.HIDDEN -> drawFolder(c, sp, b.hideX, b.hideY, b.hideVariant, b.hideFolderAlpha)
+            ThiefState.HIDDEN -> if (e.seekActive) drawSeekSpots(c, e) else drawFolder(c, sp, b.hideX, b.hideY, b.hideVariant, b.hideFolderAlpha)
             ThiefState.HELD -> drawSprite(c, sp.caught, x, y, 0.8f, false, 1f)
             ThiefState.CAUGHT -> drawSprite(c, sp.caught, x, y, b.scale, false, 1f)
             ThiefState.JAILED -> {}
         }
+    }
+
+    /** مجلدات فارغة مرسومة برمجياً بأسماء من مجلد المستخدم؛ الحرامي في أحدها. */
+    private fun drawSeekSpots(c: Canvas, e: GameEngine) {
+        val w = e.thiefRadius * 1.9f; val h = e.thiefRadius * 1.3f
+        for (sp in e.seekSpots) {
+            val a = if (sp.wrong) 90 else 255
+            val l = sp.x - w / 2f; val t = sp.y - h / 2f
+            p.style = Paint.Style.FILL; p.color = Color.argb(a, 255, 193, 7)
+            c.drawRoundRect(l, t - h * 0.12f, l + w * 0.4f, t + h * 0.3f, 6f * density, 6f * density, p)
+            c.drawRoundRect(l, t, l + w, t + h, 8f * density, 8f * density, p)
+            p.style = Paint.Style.STROKE; p.strokeWidth = 2f * density; p.color = Color.argb(a, 230, 150, 0)
+            c.drawRoundRect(l, t, l + w, t + h, 8f * density, 8f * density, p)
+            p.style = Paint.Style.FILL
+            textPaint.textSize = 12f * density; textPaint.color = Color.argb(a, 40, 40, 40)
+            c.drawText(if (sp.wrong) "✗" else "?", sp.x, sp.y + 5f * density, textPaint)
+            textPaint.textSize = 11f * density; textPaint.color = Color.argb(255, 13, 71, 161)
+            c.drawText(sp.name, sp.x, t + h + 14f * density, textPaint)
+        }
+        p.alpha = 255
     }
 
     private fun thiefRadius() = engine?.thiefRadius ?: 60f

@@ -48,7 +48,7 @@ class EngineTest {
         assertEquals(0L, env.repo.jailEndAt)
     }
 
-    @Test fun defaultJailDuration_isOneHour() = assertEquals(60, Env().settings.jailMinutes)
+    @Test fun defaultJailDuration_isFifteenMinutes() = assertEquals(15, Env().settings.jailMinutes)
 
     @Test fun jailSurvivesRestart_whileTimeRemains() {
         val env = Env(); val e1 = env.engine(); e1.beginCapture(CaptureSource.CIRCLE)
@@ -86,5 +86,63 @@ class EngineTest {
         val env = Env(); val e = env.engine(); e.beginCapture(CaptureSource.CIRCLE); advanceEngine(e, 1.2f)
         env.settings.jailVisible = false
         assertEquals(ThiefState.JAILED, e.brain.state); assertTrue(e.jail.isJailed)
+    }
+
+    @Test fun jail_canBeDraggedAnywhere_andPositionIsSaved() {
+        val env = Env(); val e = env.engine()
+        e.brain.x = 100f; e.brain.y = 500f // الحرامي بعيد عن السجن
+        val sx = e.jailCenterX(); val sy = e.jailCenterY()
+        e.touchDown(sx, sy)
+        e.touchMove(300f, 300f)
+        e.touchUp(300f, 300f)
+        assertTrue(Math.abs(e.jailCenterX() - 300f) < 1f && Math.abs(e.jailCenterY() - 300f) < 1f)
+        assertTrue(env.settings.jailPosX in 0..1000 && env.settings.jailPosY in 0..1000)
+        val e2 = env.engine() // موضع السجن يُستعاد
+        assertTrue(Math.abs(e2.jailCenterX() - 300f) < 2f)
+    }
+
+    @Test fun jail_dragClampsInsideScreen() {
+        val env = Env(); val e = env.engine(); e.brain.x = 100f; e.brain.y = 500f
+        e.touchDown(e.jailCenterX(), e.jailCenterY()); e.touchMove(-500f, 5000f); e.touchUp(0f, 0f)
+        assertTrue(e.jailLeft() >= 0f && e.jailTop() + e.jailH <= 600.5f)
+    }
+
+    @Test fun jailedThief_followsDraggedJail() {
+        val env = Env(); val e = env.engine(); e.beginCapture(CaptureSource.CIRCLE); advanceEngine(e, 1.2f)
+        e.touchDown(e.jailCenterX(), e.jailCenterY()); e.touchMove(200f, 200f); e.touchUp(200f, 200f); advanceEngine(e, 0.1f)
+        assertEquals(ThiefState.JAILED, e.brain.state)
+        assertTrue(Math.abs(e.brain.x - e.jailCenterX()) < 1f)
+    }
+
+    @Test fun seekMode_hidesInNamedFolders_wrongTapThenFind() {
+        val env = Env(); env.settings.seekEnabled = true
+        val e = env.engine(); e.seekNames = listOf("Photos", "Docs", "Music", "Games")
+        e.brain.forceHide()
+        advanceEngine(e, 1.0f)
+        assertTrue(e.seekActive); assertEquals(ThiefState.HIDDEN, e.brain.state)
+        val wrong = e.seekSpots.indices.first { it != e.seekRealIndex }
+        e.touchDown(e.seekSpots[wrong].x, e.seekSpots[wrong].y)
+        assertTrue(e.seekSpots[wrong].wrong); assertTrue(e.seekActive)
+        val real = e.seekSpots[e.seekRealIndex]
+        e.touchDown(real.x, real.y)
+        assertFalse(e.seekActive)
+        advanceEngine(e, 0.6f)
+        assertEquals(ThiefState.RUN, e.brain.state)
+        assertEquals(5, env.repo.load().points)
+    }
+
+    @Test fun seekMode_off_usesNormalHiding() {
+        val env = Env(); val e = env.engine(); e.seekNames = listOf("A", "B")
+        e.brain.forceHide(); advanceEngine(e, 1.0f)
+        assertFalse(e.seekActive)
+    }
+
+    @Test fun seekMode_timeout_revealsThief() {
+        val env = Env(); env.settings.seekEnabled = true
+        val e = env.engine(); e.seekNames = listOf("A", "B", "C")
+        e.brain.forceHide(); advanceEngine(e, 1.0f); assertTrue(e.seekActive)
+        advanceEngine(e, GameEngine.SEEK_TIMEOUT_SEC + 1f)
+        assertFalse(e.seekActive)
+        assertTrue(e.brain.state != ThiefState.HIDDEN)
     }
 }

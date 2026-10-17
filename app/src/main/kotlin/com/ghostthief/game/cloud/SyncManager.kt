@@ -26,6 +26,9 @@ class SyncManager(
     @Volatile var status: SyncStatus = SyncStatus.DISABLED
         private set
     @Volatile private var syncing = false
+    /** سبب آخر فشل (للتشخيص: مثل PERMISSION_DENIED أو مشكلة Auth). */
+    @Volatile var lastError: String? = null
+        private set
 
     fun currentStatus(): SyncStatus = when {
         !settings.cloudSyncEnabled -> SyncStatus.DISABLED
@@ -42,23 +45,24 @@ class SyncManager(
         try {
             backend.fetch { fetched ->
                 try {
-                    fetched.onFailure { fail(onDone) }
+                    fetched.onFailure { fail(onDone, it) }
                     fetched.onSuccess { remote ->
                         val merged = if (remote == null) repo.load() else Progress.merge(repo.load(), remote)
                         repo.save(merged)
                         backend.push(merged) { pushed ->
-                            pushed.onSuccess { repo.dirty = false; finish(SyncStatus.SYNCED, onDone) }
-                            pushed.onFailure { fail(onDone) }
+                            pushed.onSuccess { repo.dirty = false; lastError = null; finish(SyncStatus.SYNCED, onDone) }
+                            pushed.onFailure { fail(onDone, it) }
                         }
                     }
-                } catch (t: Throwable) { fail(onDone) }
+                } catch (t: Throwable) { fail(onDone, t) }
             }
         } catch (t: Throwable) {
-            fail(onDone)
+            fail(onDone, t)
         }
     }
 
-    private fun fail(onDone: (SyncStatus) -> Unit) {
+    private fun fail(onDone: (SyncStatus) -> Unit, t: Throwable? = null) {
+        lastError = t?.let { "${it.javaClass.simpleName}: ${it.message.orEmpty().take(140)}" }
         repo.dirty = true
         finish(SyncStatus.OFFLINE_PENDING, onDone)
     }

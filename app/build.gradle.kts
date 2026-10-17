@@ -11,7 +11,7 @@ if (hasFirebase) {
 
 android {
     namespace = "com.ghostthief.game"
-    compileSdk = 34
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.ghostthief.game"

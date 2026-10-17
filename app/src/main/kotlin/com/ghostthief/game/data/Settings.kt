@@ -1,5 +1,7 @@
 package com.ghostthief.game.data
 
+import com.ghostthief.game.BuildConfig
+
 /** إعدادات اللعبة (محلية بالكامل). القيم الافتراضية آمنة. */
 class Settings(private val kv: KeyValueStore) {
     /** سرعة الحركة بالمئة: 50..200. */
@@ -42,20 +44,36 @@ class Settings(private val kv: KeyValueStore) {
         set(v) = kv.put("floating_enabled", v)
 
     var cloudSyncEnabled: Boolean
-        get() = kv.getBoolean("cloud_sync_enabled", false)
+        get() = kv.getBoolean("cloud_sync_enabled", BuildConfig.FIREBASE_CONFIGURED)
         set(v) = kv.put("cloud_sync_enabled", v)
 
-    /** الإعلانات مطفأة افتراضياً (لعبة أطفال). */
+    /** مفعّلة افتراضياً في نكهة ads فقط (نكهة noads لا تحتوي إعلانات). */
     var adsEnabled: Boolean
-        get() = kv.getBoolean("ads_enabled", false)
+        get() = kv.getBoolean("ads_enabled", BuildConfig.ADS_ENABLED)
         set(v) = kv.put("ads_enabled", v)
+
+    /** موضع السجن المخصص (من 0 إلى 1000 نسبةً لمساحة الساحة). -1 = استخدم الزاوية المختارة. */
+    var jailPosX: Int
+        get() = kv.getInt("jail_px", -1)
+        set(v) = kv.put("jail_px", v)
+    var jailPosY: Int
+        get() = kv.getInt("jail_py", -1)
+        set(v) = kv.put("jail_py", v)
+
+    /** وضع البحث: يختبئ الحرامي داخل أسماء عناصر مجلد اختاره المستخدم بمنتقي الملفات. */
+    var seekEnabled: Boolean
+        get() = kv.getBoolean("seek_enabled", false)
+        set(v) = kv.put("seek_enabled", v)
+    var seekFolderUri: String?
+        get() = kv.getString("seek_folder_uri", null)
+        set(v) = kv.put("seek_folder_uri", v)
 
     fun resetSettings() {
         for (k in listOf(
             "speed_percent", "jail_minutes", "volume_percent", "sound_enabled", "effects_enabled",
-            "jail_visible", "show_jail_timer", "jail_corner", "cloud_sync_enabled", "ads_enabled"
+            "jail_visible", "show_jail_timer", "jail_corner", "cloud_sync_enabled", "ads_enabled", "jail_px", "jail_py"
         )) kv.put(k, null as String?)
     }
 
-    companion object { const val DEFAULT_JAIL_MINUTES = 60 }
+    companion object { const val DEFAULT_JAIL_MINUTES = 15 }
 }

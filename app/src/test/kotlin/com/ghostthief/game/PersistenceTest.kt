@@ -34,7 +34,7 @@ class PersistenceTest {
         assertEquals(0, p.captures); assertEquals(0, p.points); assertEquals(1, p.resetEpoch)
     }
 
-    @Test fun defaults_adsAndCloudAreOff() {
-        val env = Env(); assertFalse(env.settings.adsEnabled); assertFalse(env.settings.cloudSyncEnabled); assertFalse(env.settings.floatingEnabled)
+    @Test fun defaults_floatingAndSeekAreOff_jailIsFifteenMinutes() {
+        val env = Env(); assertFalse(env.settings.floatingEnabled); assertFalse(env.settings.seekEnabled); assertEquals(15, env.settings.jailMinutes)
     }
 }

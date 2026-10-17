@@ -31,6 +31,14 @@ class ProgressRepository(private val kv: KeyValueStore) {
         return reward
     }
 
+    /** نقاط إضافية (مثل مكافأة العثور على الحرامي في وضع البحث). */
+    fun awardPoints(n: Int) {
+        if (n <= 0) return
+        val p = load()
+        save(p.copy(points = p.points + n))
+        kv.put("dirty", true)
+    }
+
     /** إعادة ضبط التقدم (بعد تأكيد المستخدم). يرفع resetEpoch لتفوز على نسخة السحابة القديمة. */
     fun resetProgress() {
         val epoch = load().resetEpoch + 1
