@@ -74,4 +74,30 @@
     <string name="s_seek_none">لم تختر مجلداً بعد</string>
     <string name="s_seek_dialog_title">اختيار مجلد للاختباء فيه</string>
     <string name="s_seek_dialog_msg">سيفتح Android منتقي الملفات الرسمي لتختار مجلداً بنفسك. ستقرأ اللعبة أسماء العناصر داخله فقط لتعرضها كأماكن اختباء، ولن تقرأ محتوى أي ملف ولن تحفظ الأسماء ولن ترسلها. يمكنك إلغاء الربط في أي وقت.</string>
+    <string name="msg_ouch">آي! 😣</string>
+    <string name="msg_heist_start">الحرامي يسرق «%1$s»! 😈</string>
+    <string name="msg_rescued">استرجعت «%1$s»! +%2$d 🎉</string>
+    <string name="msg_escaped_loot">هرب الحرامي بـ «%1$s» 😱</string>
+    <string name="msg_stashed">خبّأ الحرامي «%1$s»! ابحث عنه 🔍</string>
+    <string name="msg_dropped">أسقط «%1$s»! +%2$d</string>
+
+    <string name="save">حفظ</string>
+    <string name="h_heist">السرقة التمثيلية للملفات والتطبيقات</string>
+    <string name="h_heist_desc">يسرق الحرامي «غنائم» تمثيلية بحسب حجمها: الصغيرة يحملها ويهرب، المتوسطة يخبّئها، والكبيرة يسحبها بحبل بجهد. تمثيل فقط: لا يتغير ولا يُحذف أي ملف أو تطبيق على هاتفك.</string>
+    <string name="h_pick_apps">اختيار التطبيقات التي يسرقها (تمثيلاً)</string>
+    <string name="h_scan">فحص المجلد وعرض أسماء الملفات</string>
+    <string name="h_dialog_title">اختيار تطبيقات للسرقة التمثيلية</string>
+    <string name="h_dialog_msg">ستظهر قائمة بالتطبيقات القابلة للتشغيل على هاتفك لتختار منها بنفسك (حتى 8). نستخدم اسم التطبيق وأيقونته وحجمه للعرض داخل اللعبة فقط. لن نحذف أو نعدّل أو نخفي أي تطبيق، ولن نرسل القائمة لأي جهة.</string>
+    <string name="h_pick_title">اختر حتى 8 تطبيقات</string>
+    <string name="h_saved">تم حفظ اختيارك (%1$d)</string>
+    <string name="h_scan_empty">لم نجد ملفات. اختر مجلداً أولاً من «وضع البحث».</string>
+    <string name="h_scan_title">وجدنا %1$d ملفاً</string>
+    <string name="h_kind_small">يحملها ويهرب</string>
+    <string name="h_kind_medium">يخبّئها</string>
+    <string name="h_kind_large">يسحبها بحبل</string>
+    <string name="s_float_size">حجم النافذة العائمة</string>
+    <string name="float_small">صغير (افتراضي)</string>
+    <string name="float_medium">متوسط</string>
+    <string name="float_large">كبير</string>
+    <string name="s_float_hint">اسحب المقبض (⋯) أعلى النافذة لتحريكها، و✕ لإغلاقها.</string>
 </resources>

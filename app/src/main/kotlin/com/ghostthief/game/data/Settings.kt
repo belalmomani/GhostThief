@@ -68,6 +68,20 @@ class Settings(private val kv: KeyValueStore) {
         get() = kv.getString("seek_folder_uri", null)
         set(v) = kv.put("seek_folder_uri", v)
 
+    /** السرقة التمثيلية: يسرق الحرامي «غنائم» (أسماء/أحجام ملفات أو تطبيقات اختارها المستخدم). تمثيل فقط، لا يتغير شيء فعلياً. */
+    var heistEnabled: Boolean
+        get() = kv.getBoolean("heist_enabled", false)
+        set(v) = kv.put("heist_enabled", v)
+    /** حزم التطبيقات التي اختارها المستخدم بنفسه (مفصولة بفاصلة). */
+    var heistApps: String
+        get() = kv.getString("heist_apps", "") ?: ""
+        set(v) = kv.put("heist_apps", v)
+
+    /** حجم النافذة العائمة: 0 صغير، 1 متوسط، 2 كبير. */
+    var floatSize: Int
+        get() = kv.getInt("float_size", 0).coerceIn(0, 2)
+        set(v) = kv.put("float_size", v.coerceIn(0, 2))
+
     fun resetSettings() {
         for (k in listOf(
             "speed_percent", "jail_minutes", "volume_percent", "sound_enabled", "effects_enabled",

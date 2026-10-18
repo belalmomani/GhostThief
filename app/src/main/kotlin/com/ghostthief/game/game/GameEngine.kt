@@ -7,14 +7,16 @@ import kotlin.math.hypot
 import kotlin.math.min
 import kotlin.random.Random
 
-enum class GameMessage { CAUGHT, CAUGHT_BONUS, ACHIEVEMENT, CIRCLE_FAILED, ESCAPED, TRY_AGAIN, SEEK_START, FOUND, NOT_HERE }
+enum class GameMessage { CAUGHT, CAUGHT_BONUS, ACHIEVEMENT, CIRCLE_FAILED, ESCAPED, TRY_AGAIN, SEEK_START, FOUND, NOT_HERE, OUCH, HEIST_START, RESCUED, ESCAPED_LOOT, STASHED, DROPPED_LOOT }
 
 interface GameListener {
     fun onMessage(msg: GameMessage, points: Int = 0)
     fun onSound(effect: SoundEffect)
+    /** رسائل السرقة التي تحتوي اسم الغنيمة. */
+    fun onLootMessage(msg: GameMessage, name: String, points: Int = 0) {}
 }
 
-enum class SoundEffect { POP, CATCH, FAIL, ESCAPE }
+enum class SoundEffect { POP, CATCH, FAIL, ESCAPE, OUCH }
 
 /** مكان اختباء في وضع البحث. الاسم يأتي من مجلد اختاره المستخدم (يبقى في الذاكرة فقط). */
 class SeekSpot(val x: Float, val y: Float, val name: String) { var wrong = false }
@@ -67,6 +69,12 @@ class GameEngine(
     private var seekTime = 0f
     private var prevState = ThiefState.RUN
 
+    // السرقة التمثيلية (اختيارية)
+    /** الغنائم المتاحة (أسماء وأحجام فقط، في الذاكرة). */
+    var loots: List<Loot> = emptyList()
+    var currentLoot: Loot? = null; private set
+    private var heistTimer = 8f + rnd.nextFloat() * 8f
+
     var lastTickMs = 0L
     var paused = false
 
@@ -91,9 +99,11 @@ class GameEngine(
 
     fun setArena(w: Float, h: Float, density: Float) {
         arenaW = w; arenaH = h
-        thiefRadius = 48f * density
-        jailW = 76f * density; jailH = 96f * density
-        jailMargin = 10f * density
+        // الأحجام تتناسب مع مساحة الساحة (مهم للنافذة العائمة الصغيرة)
+        thiefRadius = minOf(48f * density, h * 0.17f).coerceAtLeast(20f * density)
+        jailH = minOf(72f * density, h * 0.36f)
+        jailW = jailH * 0.78f
+        jailMargin = 8f * density
         brain.setArena(w, h)
         relayoutJail()
         if (brain.state == ThiefState.JAILED) brain.restoreJailed(jailCenterX(), jailCenterY())
@@ -145,6 +155,8 @@ class GameEngine(
             else if (seekTime >= SEEK_TIMEOUT_SEC) revealReal(found = false)
         }
 
+        updateHeist(dt)
+
         if (brain.state == ThiefState.JAILED) { brain.x = jailCenterX(); brain.y = jailCenterY() }
         if (brain.arrivedInJail) {
             capture.finish()
@@ -157,6 +169,43 @@ class GameEngine(
             listener?.onMessage(GameMessage.ESCAPED)
             listener?.onSound(SoundEffect.ESCAPE)
         }
+    }
+
+    // ---------- السرقة التمثيلية ----------
+    private fun updateHeist(dt: Float) {
+        if (settings.heistEnabled && loots.isNotEmpty() && currentLoot == null &&
+            brain.state == ThiefState.RUN && !seekActive && !isJailed()) {
+            heistTimer -= dt
+            if (heistTimer <= 0f) startHeist()
+        }
+        val ev = brain.takeLootEvent()
+        val loot = currentLoot
+        if (loot != null) {
+            when (ev) {
+                LootEvent.PICKED -> {}
+                LootEvent.ESCAPED_WITH -> listener?.onLootMessage(GameMessage.ESCAPED_LOOT, loot.name)
+                LootEvent.STASHED -> listener?.onLootMessage(GameMessage.STASHED, loot.name)
+                LootEvent.DROPPED -> {
+                    progress.awardPoints(LootRules.DROP_BONUS)
+                    listener?.onLootMessage(GameMessage.DROPPED_LOOT, loot.name, LootRules.DROP_BONUS)
+                }
+                LootEvent.NONE -> {}
+            }
+            if (brain.lootKind == null) { currentLoot = null; heistTimer = 12f + rnd.nextFloat() * 14f }
+        }
+    }
+
+    /** للاختبار/التشغيل اليدوي: يبدأ سرقة الآن. */
+    fun triggerHeist() = startHeist()
+
+    private fun startHeist() {
+        val loot = loots.random(rnd)
+        val lx = arenaW * (0.2f + 0.6f * rnd.nextFloat())
+        val ly = arenaH * (0.3f + 0.4f * rnd.nextFloat())
+        if (brain.beginHeist(lx, ly, loot.kind)) {
+            currentLoot = loot
+            listener?.onLootMessage(GameMessage.HEIST_START, loot.name)
+        } else heistTimer = 3f
     }
 
     // ---------- وضع البحث ----------
@@ -280,7 +329,10 @@ class GameEngine(
                 if (inJail) beginCapture(CaptureSource.LONG_PRESS_DRAG) else { brain.releaseHeld(); listener?.onMessage(GameMessage.TRY_AGAIN) }
             }
             !moved && downOnThief && downTime < LONG_PRESS_SEC -> {
-                if (brain.poke()) listener?.onSound(SoundEffect.POP)
+                if (brain.poke()) { // ضربة خفيفة: يصرخ «آي!» ثم يهرب ويختبئ
+                    listener?.onSound(SoundEffect.OUCH)
+                    listener?.onMessage(GameMessage.OUCH)
+                }
             }
             moved && threadProgress > 0.3f && brain.isCatchable() -> {
                 listener?.onMessage(GameMessage.CIRCLE_FAILED)
@@ -305,6 +357,14 @@ class GameEngine(
         if (!brain.capture(jailCenterX(), jailCenterY())) { capture.finish(); return false }
         jail.start(settings.jailMinutes * 60_000L)
         progress.jailEndAt = jail.endAtMillis
+        val rescued = brain.takeRescued()
+        val loot = currentLoot
+        if (rescued != null && loot != null) {
+            val bonus = LootRules.rescueBonus(rescued)
+            progress.awardPoints(bonus)
+            listener?.onLootMessage(GameMessage.RESCUED, loot.name, bonus)
+        }
+        if (brain.lootKind == null) currentLoot = null
         val reward = progress.recordCapture(source == CaptureSource.CIRCLE)
         pointerDown = false; threadProgress = 0f; path.clear()
         listener?.onMessage(if (reward.bonusTier) GameMessage.CAUGHT_BONUS else GameMessage.CAUGHT, reward.pointsGained)

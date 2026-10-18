@@ -145,4 +145,36 @@ class EngineTest {
         assertFalse(e.seekActive)
         assertTrue(e.brain.state != ThiefState.HIDDEN)
     }
+
+    @Test fun tapOnThief_hurts_playsOuch_thenHides() {
+        val env = Env(); val e = env.engine()
+        val sounds = mutableListOf<SoundEffect>()
+        e.listener = object : GameListener {
+            override fun onMessage(msg: GameMessage, points: Int) {}
+            override fun onSound(effect: SoundEffect) { sounds += effect }
+        }
+        e.brain.x = 300f; e.brain.y = 300f
+        e.touchDown(300f, 300f); e.touchUp(300f, 300f)
+        assertTrue(SoundEffect.OUCH in sounds)
+        advanceEngine(e, 1.8f)
+        assertTrue(e.brain.state == ThiefState.FADE_OUT || e.brain.state == ThiefState.HIDDEN)
+    }
+
+    @Test fun heist_rescue_giveBonusOnCapture() {
+        val env = Env(); env.settings.heistEnabled = true
+        val e = env.engine(); e.loots = listOf(com.ghostthief.game.logic.Loot("WhatsApp", 200L * 1024 * 1024, true))
+        e.triggerHeist(); assertNotNull(e.currentLoot)
+        e.brain.x = e.brain.lootX - 20f; e.brain.y = e.brain.lootY // بجانب الغنيمة
+        advanceEngine(e, 0.3f)
+        assertEquals(ThiefState.DRAG, e.brain.state)
+        assertTrue(e.beginCapture(CaptureSource.CIRCLE))
+        assertEquals(15 + 40, env.repo.load().points) // قبض دائري + مكافأة غنيمة كبيرة
+        assertNull(e.currentLoot)
+    }
+
+    @Test fun heist_disabled_neverStarts() {
+        val env = Env(); val e = env.engine(); e.loots = listOf(com.ghostthief.game.logic.Loot("A", 1L, false))
+        advanceEngine(e, 40f)
+        assertNull(e.currentLoot)
+    }
 }

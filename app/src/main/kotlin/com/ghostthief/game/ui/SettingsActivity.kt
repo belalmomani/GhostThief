@@ -20,6 +20,7 @@ class SettingsActivity : AppCompatActivity() {
     private val jailOptions = intArrayOf(1, 5, 15, 30, 60, 120, 180)
     private lateinit var seekSwitch: MaterialSwitch
     private lateinit var seekLabel: TextView
+    private lateinit var heistSwitch: MaterialSwitch
     private val folderPicker = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri == null) { app.settings.seekEnabled = false; refreshSeek(); return@registerForActivityResult }
         try { contentResolver.takePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (_: Throwable) {}
@@ -132,6 +133,28 @@ class SettingsActivity : AppCompatActivity() {
         }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, (52 * d).toInt()))
         refreshSeek()
 
+        // السرقة التمثيلية (اختيارية)
+        heistSwitch = toggle(R.string.h_heist, s.heistEnabled) { s.heistEnabled = it }
+        col.addView(TextView(this).apply { text = getString(R.string.h_heist_desc); textSize = 13f; setTextColor(0xFF546E7A.toInt()) })
+        col.addView(MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+            text = getString(R.string.h_pick_apps); setOnClickListener { askPickApps() }
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, (52 * d).toInt()))
+        col.addView(MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+            text = getString(R.string.h_scan); setOnClickListener { scanFolder() }
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, (52 * d).toInt()))
+
+        label(R.string.s_float_size)
+        val sizes = listOf(R.string.float_small, R.string.float_medium, R.string.float_large).map { getString(it) }
+        col.addView(Spinner(this).apply {
+            adapter = ArrayAdapter(this@SettingsActivity, android.R.layout.simple_spinner_dropdown_item, sizes)
+            setSelection(s.floatSize)
+            onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+                override fun onItemSelected(p: AdapterView<*>?, v: View?, pos: Int, id: Long) { s.floatSize = pos }
+                override fun onNothingSelected(p: AdapterView<*>?) {}
+            }
+        })
+        col.addView(TextView(this).apply { text = getString(R.string.s_float_hint); textSize = 13f; setTextColor(0xFF546E7A.toInt()) })
+
         val adsAvail = app.ads.available
         toggle(R.string.s_ads, s.adsEnabled && adsAvail, adsAvail) { s.adsEnabled = it }
         if (!adsAvail) col.addView(TextView(this).apply { text = getString(R.string.s_ads_unavailable); textSize = 13f })
@@ -142,6 +165,72 @@ class SettingsActivity : AppCompatActivity() {
         }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, (56 * d).toInt()).apply { topMargin = (24 * d).toInt() })
 
         updateCloud()
+    }
+
+    private fun askPickApps() {
+        AlertDialog.Builder(this)
+            .setTitle(R.string.h_dialog_title)
+            .setMessage(R.string.h_dialog_msg)
+            .setPositiveButton(R.string.continue_btn) { _, _ -> showAppList() }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun showAppList() {
+        Thread {
+            val pm = packageManager
+            val intent = android.content.Intent(android.content.Intent.ACTION_MAIN).addCategory(android.content.Intent.CATEGORY_LAUNCHER)
+            val apps = try {
+                pm.queryIntentActivities(intent, 0)
+                    .map { it.activityInfo.packageName to it.loadLabel(pm).toString() }
+                    .filter { it.first != packageName }
+                    .distinctBy { it.first }
+                    .sortedBy { it.second.lowercase() }
+            } catch (t: Throwable) { emptyList() }
+            runOnUiThread {
+                val chosen = app.settings.heistApps.split(',').filter { it.isNotBlank() }.toSet()
+                val labels = apps.map { it.second }.toTypedArray()
+                val checked = BooleanArray(apps.size) { apps[it].first in chosen }
+                AlertDialog.Builder(this)
+                    .setTitle(R.string.h_pick_title)
+                    .setMultiChoiceItems(labels, checked) { _, i, c -> checked[i] = c }
+                    .setPositiveButton(R.string.save) { _, _ ->
+                        val sel = apps.indices.filter { checked[it] }.take(8).map { apps[it].first }
+                        app.settings.heistApps = sel.joinToString(",")
+                        if (sel.isNotEmpty()) heistSwitch.isChecked = true
+                        Toast.makeText(this, getString(R.string.h_saved, sel.size), Toast.LENGTH_SHORT).show()
+                    }
+                    .setNegativeButton(R.string.cancel, null)
+                    .show()
+            }
+        }.start()
+    }
+
+    /** زر اختياري: يفحص المجلد المختار ويعرض ما وُجد فيه من ملفات (اسم + حجم + أسلوب السرقة). */
+    private fun scanFolder() {
+        val uri = app.settings.seekFolderUri
+        Thread {
+            val files = try { com.ghostthief.game.game.LootLoader.loadFiles(this, uri).sortedByDescending { it.sizeBytes } } catch (t: Throwable) { emptyList() }
+            runOnUiThread {
+                if (files.isEmpty()) {
+                    AlertDialog.Builder(this).setMessage(R.string.h_scan_empty).setPositiveButton(android.R.string.ok, null).show()
+                } else {
+                    val lines = files.take(40).map {
+                        val how = when (it.kind) {
+                            com.ghostthief.game.logic.LootKind.SMALL -> getString(R.string.h_kind_small)
+                            com.ghostthief.game.logic.LootKind.MEDIUM -> getString(R.string.h_kind_medium)
+                            com.ghostthief.game.logic.LootKind.LARGE -> getString(R.string.h_kind_large)
+                        }
+                        "${it.name} — ${com.ghostthief.game.logic.LootRules.formatSize(it.sizeBytes)} — $how"
+                    }
+                    AlertDialog.Builder(this)
+                        .setTitle(getString(R.string.h_scan_title, files.size))
+                        .setItems(lines.toTypedArray(), null)
+                        .setPositiveButton(android.R.string.ok, null)
+                        .show()
+                }
+            }
+        }.start()
     }
 
     private fun askPickFolder() {

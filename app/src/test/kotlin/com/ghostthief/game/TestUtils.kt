@@ -16,6 +16,12 @@ fun advance(brain: ThiefBrain, seconds: Float, step: Float = 0.05f) {
     while (t < seconds) { brain.update(step); t += step }
 }
 
+fun advanceUntil(brain: ThiefBrain, state: com.ghostthief.game.logic.ThiefState, maxSeconds: Float = 10f, step: Float = 0.05f): Boolean {
+    var t = 0f
+    while (t < maxSeconds) { if (brain.state == state) return true; brain.update(step); t += step }
+    return brain.state == state
+}
+
 fun advanceEngine(e: GameEngine, seconds: Float, step: Float = 0.05f) {
     var t = 0f
     while (t < seconds) { e.update(step); t += step }

@@ -8,6 +8,9 @@ import android.view.MotionEvent
 import android.view.View
 import com.ghostthief.game.R
 import com.ghostthief.game.logic.JailTimer
+import com.ghostthief.game.logic.Loot
+import com.ghostthief.game.logic.LootKind
+import com.ghostthief.game.logic.LootRules
 import com.ghostthief.game.logic.ThiefState
 import kotlin.math.PI
 import kotlin.math.sin
@@ -25,6 +28,11 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
     /** وضع النافذة العائمة: نرسم زر إغلاق ولا نرسم أي شيء خارج الساحة. */
     var arenaMode = false
     var onCloseRequested: (() -> Unit)? = null
+    /** يُستدعى عند سحب مقبض تحريك النافذة العائمة (فرق الإحداثيات بالبكسل). */
+    var onWindowDrag: ((Float, Float) -> Unit)? = null
+    private var draggingWindow = false
+    private var lastRawX = 0f
+    private var lastRawY = 0f
 
     private val density = resources.displayMetrics.density
     private var sprites: Sprites? = null
@@ -109,7 +117,11 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
             GameMessage.SEEK_START -> context.getString(R.string.msg_seek_start)
             GameMessage.FOUND -> context.getString(R.string.msg_found, points)
             GameMessage.NOT_HERE -> context.getString(R.string.msg_not_here)
+            GameMessage.OUCH -> context.getString(R.string.msg_ouch)
+            GameMessage.HEIST_START, GameMessage.RESCUED, GameMessage.ESCAPED_LOOT,
+            GameMessage.STASHED, GameMessage.DROPPED_LOOT -> ""
         }
+        if (text.isEmpty()) return
         post {
             msgText = text; msgLife = 2.4f
             if (e.settings.effectsEnabled) when (msg) {
@@ -117,8 +129,25 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
                 GameMessage.CIRCLE_FAILED, GameMessage.TRY_AGAIN -> burst(e.brain.x, e.brain.y, false)
                 GameMessage.ESCAPED -> burst(e.jailCenterX(), e.jailCenterY(), false)
                 GameMessage.FOUND -> burst(e.brain.x, e.brain.y, true)
+                GameMessage.OUCH -> burst(e.brain.x, e.brain.y, false)
                 else -> {}
             }
+        }
+    }
+
+    override fun onLootMessage(msg: GameMessage, name: String, points: Int) {
+        val e = engine ?: return
+        val text = when (msg) {
+            GameMessage.HEIST_START -> context.getString(R.string.msg_heist_start, name)
+            GameMessage.RESCUED -> context.getString(R.string.msg_rescued, name, points)
+            GameMessage.ESCAPED_LOOT -> context.getString(R.string.msg_escaped_loot, name)
+            GameMessage.STASHED -> context.getString(R.string.msg_stashed, name)
+            GameMessage.DROPPED_LOOT -> context.getString(R.string.msg_dropped, name, points)
+            else -> return
+        }
+        post {
+            msgText = text; msgLife = 2.6f
+            if (e.settings.effectsEnabled && (msg == GameMessage.RESCUED || msg == GameMessage.DROPPED_LOOT)) burst(e.brain.x, e.brain.y, true)
         }
     }
 
@@ -139,7 +168,9 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
         val e = engine ?: return
         val sp = sprites ?: return
         drawJail(c, e, sp)
+        drawLootBefore(c, e)
         drawThief(c, e, sp)
+        drawLootCarried(c, e)
         drawTrail(c, e)
         for (q in particles) {
             p.color = q.color; p.alpha = (255 * (q.life.coerceIn(0f, 1f))).toInt()
@@ -147,7 +178,7 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
         }
         p.alpha = 255
         drawMessage(c)
-        if (arenaMode) drawClose(c)
+        if (arenaMode) { drawClose(c); drawGrip(c) }
     }
 
     private fun drawSprite(c: Canvas, b: Bitmap, cx: Float, cy: Float, scale: Float, flip: Boolean, alpha: Float) {
@@ -168,7 +199,12 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
         val flip = b.facing < 0
         val x = b.x; val y = b.y
         when (b.state) {
-            ThiefState.RUN, ThiefState.FLEE -> drawSprite(c, sp.run[(b.runClock * 10f).toInt() % 4], x, y, b.scale, flip, 1f)
+            ThiefState.RUN, ThiefState.FLEE, ThiefState.HEIST_GO, ThiefState.CARRY ->
+                drawSprite(c, sp.run[(b.runClock * 10f).toInt() % 4], x, y, b.scale, flip, 1f)
+            ThiefState.DRAG -> { // يسحب بجهد: حركة بطيئة واهتزاز
+                val shake = (sin(b.stateTime * 28f) * 2.5f * density)
+                drawSprite(c, sp.run[(b.runClock * 6f).toInt() % 4], x + shake, y, b.scale, flip, 1f)
+            }
             ThiefState.ESCAPING -> drawSprite(c, sp.run[(b.stateTime * 12f).toInt() % 4], x, y, b.scale, flip, 1f)
             ThiefState.STAND -> drawSprite(c, sp.stand, x, y + bob(b.stateTime), 1f, flip, 1f)
             ThiefState.LOOK -> drawSprite(c, sp.stand, x, y + bob(b.stateTime), 1f, flip, 1f)
@@ -211,6 +247,62 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
             c.drawText(sp.name, sp.x, t + h + 14f * density, textPaint)
         }
         p.alpha = 255
+    }
+
+    private fun lootColor(k: LootKind) = when (k) {
+        LootKind.SMALL -> Color.rgb(67, 160, 71)
+        LootKind.MEDIUM -> Color.rgb(251, 140, 0)
+        LootKind.LARGE -> Color.rgb(229, 57, 53)
+    }
+
+    /** بطاقة غنيمة: أيقونة التطبيق (أو رمز ملف) + الاسم + الحجم. */
+    private fun drawLootCard(c: Canvas, loot: Loot, cx: Float, cy: Float, scale: Float, alpha: Float) {
+        val side = thiefRadius() * 1.25f * scale
+        val a = (alpha.coerceIn(0f, 1f) * 255).toInt()
+        p.style = Paint.Style.FILL; p.color = Color.argb((a * 0.92f).toInt(), 255, 255, 255)
+        c.drawRoundRect(cx - side / 2f, cy - side / 2f, cx + side / 2f, cy + side / 2f, 8f * density, 8f * density, p)
+        p.style = Paint.Style.STROKE; p.strokeWidth = 3f * density; p.color = lootColor(loot.kind); p.alpha = a
+        c.drawRoundRect(cx - side / 2f, cy - side / 2f, cx + side / 2f, cy + side / 2f, 8f * density, 8f * density, p)
+        p.style = Paint.Style.FILL; p.alpha = 255
+        val icon = LootCatalog.icons[loot.name]
+        if (icon != null) {
+            val r = RectF(cx - side * 0.36f, cy - side * 0.36f, cx + side * 0.36f, cy + side * 0.36f)
+            p.alpha = a; c.drawBitmap(icon, null, r, p); p.alpha = 255
+        } else {
+            textPaint.textSize = side * 0.55f; textPaint.color = Color.argb(a, 60, 60, 60)
+            c.drawText(if (loot.isApp) "📦" else "📄", cx, cy + side * 0.2f, textPaint)
+        }
+        textPaint.textSize = 10f * density; textPaint.color = Color.argb(a, 13, 71, 161)
+        c.drawText(loot.name + " • " + LootRules.formatSize(loot.sizeBytes), cx, cy + side / 2f + 12f * density, textPaint)
+    }
+
+    /** الغنيمة قبل الالتقاط أو أثناء سحبها بحبل. */
+    private fun drawLootBefore(c: Canvas, e: GameEngine) {
+        val loot = e.currentLoot ?: return
+        val b = e.brain
+        when (b.state) {
+            ThiefState.HEIST_GO -> drawLootCard(c, loot, b.lootX, b.lootY, 1f, 1f)
+            ThiefState.DRAG -> {
+                val hx = b.x - b.facing * thiefRadius() * 0.35f; val hy = b.y + thiefRadius() * 0.1f
+                val path = Path(); path.moveTo(hx, hy)
+                path.quadTo((hx + b.lootX) / 2f, (hy + b.lootY) / 2f + 14f * density, b.lootX, b.lootY)
+                trailPaint.color = Color.rgb(121, 85, 72); trailPaint.strokeWidth = 5f * density
+                c.drawPath(path, trailPaint)
+                trailPaint.color = Color.rgb(188, 143, 110); trailPaint.strokeWidth = 2f * density
+                c.drawPath(path, trailPaint)
+                drawLootCard(c, loot, b.lootX, b.lootY, 1.35f, 1f)
+            }
+            else -> {}
+        }
+    }
+
+    /** الغنيمة المحمولة فوق رأس الحرامي. */
+    private fun drawLootCarried(c: Canvas, e: GameEngine) {
+        val loot = e.currentLoot ?: return
+        val b = e.brain
+        if (b.state == ThiefState.CARRY || (b.carrying && b.alpha > 0.05f && b.state != ThiefState.DRAG)) {
+            drawLootCard(c, loot, b.x, b.y - thiefRadius() * 1.75f, 0.7f, b.alpha.coerceAtLeast(0.0f).let { if (b.state == ThiefState.CARRY) 1f else it })
+        }
     }
 
     private fun thiefRadius() = engine?.thiefRadius ?: 60f
@@ -285,6 +377,16 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
         textPaint.alpha = 255
     }
 
+    private fun gripRect() = RectF(4f * density, 4f * density, 44f * density, 28f * density)
+
+    /** مقبض تحريك النافذة العائمة. */
+    private fun drawGrip(c: Canvas) {
+        val r = gripRect()
+        p.color = Color.argb(150, 33, 33, 33); c.drawRoundRect(r, 10f * density, 10f * density, p)
+        p.color = Color.WHITE
+        for (i in -1..1) c.drawCircle(r.centerX() + i * 8f * density, r.centerY(), 2.2f * density, p)
+    }
+
     private fun drawClose(c: Canvas) {
         val cx = width - closeR - 4f * density; val cy = closeR + 4f * density
         p.color = Color.argb(200, 230, 70, 70); c.drawCircle(cx, cy, closeR, p)
@@ -298,6 +400,9 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
         val e = engine ?: return false
         when (ev.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
+                if (arenaMode && gripRect().contains(ev.x, ev.y)) {
+                    draggingWindow = true; lastRawX = ev.rawX; lastRawY = ev.rawY; return true
+                }
                 if (arenaMode) {
                     val cx = width - closeR - 4f * density; val cy = closeR + 4f * density
                     if (Math.hypot((ev.x - cx).toDouble(), (ev.y - cy).toDouble()) <= closeR * 1.6) {
@@ -306,9 +411,17 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
                 }
                 touching = true; e.touchDown(ev.x, ev.y)
             }
-            MotionEvent.ACTION_MOVE -> e.touchMove(ev.x, ev.y)
-            MotionEvent.ACTION_UP -> { touching = false; e.touchUp(ev.x, ev.y); performClick() }
-            MotionEvent.ACTION_CANCEL -> { touching = false; e.touchCancel() }
+            MotionEvent.ACTION_MOVE -> {
+                if (draggingWindow) {
+                    onWindowDrag?.invoke(ev.rawX - lastRawX, ev.rawY - lastRawY)
+                    lastRawX = ev.rawX; lastRawY = ev.rawY
+                } else e.touchMove(ev.x, ev.y)
+            }
+            MotionEvent.ACTION_UP -> {
+                if (draggingWindow) { draggingWindow = false; return true }
+                touching = false; e.touchUp(ev.x, ev.y); performClick()
+            }
+            MotionEvent.ACTION_CANCEL -> { draggingWindow = false; touching = false; e.touchCancel() }
         }
         return true
     }

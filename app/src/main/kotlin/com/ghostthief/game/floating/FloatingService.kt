@@ -66,23 +66,31 @@ class FloatingService : Service() {
 
     private fun addOverlay(app: GhostThiefApp) {
         val d = resources.displayMetrics
-        val w = minOf((320 * d.density).toInt(), (d.widthPixels * 0.92f).toInt())
-        val h = (240 * d.density).toInt()
+        // حجم صغير افتراضياً حتى لا يغطي مساحة كبيرة؛ يمكن تغييره من الإعدادات
+        val (wDp, hDp) = when (app.settings.floatSize) { 1 -> 300 to 220; 2 -> 340 to 260; else -> 240 to 170 }
+        val w = minOf((wDp * d.density).toInt(), (d.widthPixels * 0.92f).toInt())
+        val h = (hDp * d.density).toInt()
         val lp = WindowManager.LayoutParams(
             w, h,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
             PixelFormat.TRANSLUCENT
         ).apply {
-            gravity = Gravity.BOTTOM or Gravity.START
-            x = (8 * d.density).toInt(); y = (96 * d.density).toInt()
+            gravity = Gravity.TOP or Gravity.START
+            x = (8 * d.density).toInt(); y = (d.heightPixels - h - 96 * d.density).toInt().coerceAtLeast(0)
         }
         val v = GameView(this).apply {
             arenaMode = true
             engine = GameEngine(app.settings, app.progress).also { eng ->
                 if (app.settings.seekEnabled) com.ghostthief.game.game.HideSpots.loadAsync(this@FloatingService, app.settings.seekFolderUri) { eng.seekNames = it }
+                com.ghostthief.game.game.LootLoader.loadAsync(this@FloatingService, app.settings) { eng.loots = it }
             }
             onCloseRequested = { shutdown() }
+            onWindowDrag = { dx, dy ->
+                lp.x = (lp.x + dx.toInt()).coerceIn(0, (d.widthPixels - w).coerceAtLeast(0))
+                lp.y = (lp.y + dy.toInt()).coerceIn(0, (d.heightPixels - h).coerceAtLeast(0))
+                try { wm?.updateViewLayout(this, lp) } catch (_: Throwable) {}
+            }
         }
         try {
             wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
