@@ -9,6 +9,11 @@ if (hasFirebase) {
     apply(plugin = "com.google.gms.google-services")
 }
 
+// التوقيع بمفتاحك الخاص: يُفعَّل فقط إذا وُجدت متغيرات البيئة (يضبطها GitHub Actions من الأسرار).
+// لا تضع ملف المفتاح ولا كلمات المرور في المستودع أبداً.
+val keystorePath: String? = System.getenv("KEYSTORE_PATH")
+val hasKeystore = !keystorePath.isNullOrBlank() && file(keystorePath).exists()
+
 android {
     namespace = "com.ghostthief.game"
     compileSdk = 36
@@ -41,8 +46,24 @@ android {
         }
     }
 
+    signingConfigs {
+        if (hasKeystore) {
+            create("release") {
+                storeFile = file(keystorePath!!)
+                storePassword = System.getenv("KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("KEY_ALIAS")
+                keyPassword = System.getenv("KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
+        debug {
+            // نوقّع debug بنفس المفتاح لتتطابق البصمة (SHA-1) مع Firebase
+            if (hasKeystore) signingConfig = signingConfigs.getByName("release")
+        }
         release {
+            if (hasKeystore) signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")

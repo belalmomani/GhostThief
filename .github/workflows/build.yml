@@ -25,14 +25,33 @@ jobs:
         run: |
           if [ -n "$GS_JSON_B64" ]; then echo "$GS_JSON_B64" | base64 -d > app/google-services.json; echo "Firebase config added"; else echo "No Firebase config: local-only build"; fi
 
+      # اختياري: التوقيع بمفتاحك. أضف الأسرار KEYSTORE_B64 و KEYSTORE_PASSWORD و KEY_ALIAS و KEY_PASSWORD.
+      - name: Optional signing keystore
+        env:
+          KS_B64: ${{ secrets.KEYSTORE_B64 }}
+        run: |
+          if [ -n "$KS_B64" ]; then
+            echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+            echo "KEYSTORE_PATH=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+            echo "Signing with your keystore"
+          else
+            echo "No keystore secret: debug-signed build"
+          fi
+
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: 8.11.1
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
 
       - name: Unit tests
+        env: { KEYSTORE_PASSWORD: "${{ secrets.KEYSTORE_PASSWORD }}", KEY_ALIAS: "${{ secrets.KEY_ALIAS }}", KEY_PASSWORD: "${{ secrets.KEY_PASSWORD }}" }
         run: gradle --no-daemon testNoadsDebugUnitTest
 
       - name: Build debug APK
+        env: { KEYSTORE_PASSWORD: "${{ secrets.KEYSTORE_PASSWORD }}", KEY_ALIAS: "${{ secrets.KEY_ALIAS }}", KEY_PASSWORD: "${{ secrets.KEY_PASSWORD }}" }
         run: gradle --no-daemon assembleNoadsDebug
 
       - name: Upload APK
@@ -41,6 +60,23 @@ jobs:
           name: GhostThief-NOADS-apk
           path: app/build/outputs/apk/noads/debug/*.apk
           if-no-files-found: error
+
+      # نسخة release موقّعة + AAB لـ Google Play (فقط إن أضفتَ مفتاح التوقيع؛ لا تُفشل البناء الأساسي)
+      - name: Release APK + AAB (signed)
+        if: env.KEYSTORE_PATH != ''
+        continue-on-error: true
+        env: { KEYSTORE_PASSWORD: "${{ secrets.KEYSTORE_PASSWORD }}", KEY_ALIAS: "${{ secrets.KEY_ALIAS }}", KEY_PASSWORD: "${{ secrets.KEY_PASSWORD }}" }
+        run: gradle --no-daemon assembleNoadsRelease bundleNoadsRelease
+
+      - name: Upload signed release
+        if: env.KEYSTORE_PATH != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: GhostThief-NOADS-release-signed
+          path: |
+            app/build/outputs/apk/noads/release/*.apk
+            app/build/outputs/bundle/noadsRelease/*.aab
+          if-no-files-found: ignore
 
       - name: Upload test reports
         if: always()
