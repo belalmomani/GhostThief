@@ -211,7 +211,7 @@ class GameEngine(
 
     // ---------- اللمس ----------
     fun hitsThief(x: Float, y: Float): Boolean =
-        brain.alpha > 0.2f && hypot(x - brain.x, y - brain.y) <= thiefRadius * 1.4f * brain.scale.coerceAtLeast(0.6f)
+        brain.alpha > 0.2f && !isJailed() && hypot(x - brain.x, y - brain.y) <= thiefRadius * 1.4f * brain.scale.coerceAtLeast(0.6f)
 
     fun hitsJail(x: Float, y: Float): Boolean =
         settings.jailVisible && x in jailL..(jailL + jailW) && y in jailT..(jailT + jailH)
