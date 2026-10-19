@@ -14,10 +14,11 @@ import com.google.android.material.button.MaterialButton
 import com.google.android.material.materialswitch.MaterialSwitch
 
 /** صفحة الإعدادات (مبنية برمجياً لتبقى مرنة وتدعم RTL). */
-class SettingsActivity : AppCompatActivity() {
+class SettingsActivity : BaseActivity() {
     private lateinit var app: GhostThiefApp
     private lateinit var cloudStatus: TextView
     private val jailOptions = intArrayOf(1, 5, 15, 30, 60, 120, 180)
+    private val MAX_LOOT_APPS = 100
     private lateinit var seekSwitch: MaterialSwitch
     private lateinit var seekLabel: TextView
     private lateinit var heistSwitch: MaterialSwitch
@@ -191,17 +192,27 @@ class SettingsActivity : AppCompatActivity() {
                 val chosen = app.settings.heistApps.split(',').filter { it.isNotBlank() }.toSet()
                 val labels = apps.map { it.second }.toTypedArray()
                 val checked = BooleanArray(apps.size) { apps[it].first in chosen }
-                AlertDialog.Builder(this)
+                val dialog = AlertDialog.Builder(this)
                     .setTitle(R.string.h_pick_title)
                     .setMultiChoiceItems(labels, checked) { _, i, c -> checked[i] = c }
                     .setPositiveButton(R.string.save) { _, _ ->
-                        val sel = apps.indices.filter { checked[it] }.take(8).map { apps[it].first }
+                        val all = apps.indices.filter { checked[it] }.map { apps[it].first }
+                        val sel = all.take(MAX_LOOT_APPS)
                         app.settings.heistApps = sel.joinToString(",")
                         if (sel.isNotEmpty()) heistSwitch.isChecked = true
-                        Toast.makeText(this, getString(R.string.h_saved, sel.size), Toast.LENGTH_SHORT).show()
+                        val msg = if (all.size > sel.size) getString(R.string.h_saved_trimmed, sel.size) else getString(R.string.h_saved, sel.size)
+                        Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
                     }
+                    .setNeutralButton(R.string.h_select_all, null)
                     .setNegativeButton(R.string.cancel, null)
-                    .show()
+                    .create()
+                dialog.show()
+                // زر «تحديد الكل / إلغاء التحديد» لا يغلق النافذة
+                dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
+                    val selectAll = !checked.all { it }
+                    for (i in checked.indices) { checked[i] = selectAll; dialog.listView.setItemChecked(i, selectAll) }
+                    dialog.getButton(AlertDialog.BUTTON_NEUTRAL).text = getString(if (selectAll) R.string.h_deselect_all else R.string.h_select_all)
+                }
             }
         }.start()
     }

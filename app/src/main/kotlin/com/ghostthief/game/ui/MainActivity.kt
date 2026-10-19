@@ -19,7 +19,7 @@ import com.google.android.material.button.MaterialButton
 import com.google.android.material.materialswitch.MaterialSwitch
 import android.widget.TextView
 
-class MainActivity : AppCompatActivity() {
+class MainActivity : BaseActivity() {
     private lateinit var app: GhostThiefApp
     private lateinit var controller: FloatingModeController
     private lateinit var swFloating: MaterialSwitch

@@ -13,3 +13,6 @@ captures/
 *.keystore
 keystore.properties
 secrets.properties
+
+# مفتاح الاختبار الثابت (للتحديث فوق القديم) — مقصود رفعه
+!app/ghostthief-debug.jks

@@ -45,6 +45,7 @@ class GameEngine(
     var jailW = 130f; var jailH = 160f
     var jailMargin = 16f
     var topInset = 0f
+    var bottomInset = 0f
 
     /** الوضع العائم المدمج: الساحة = الشاشة كلها، ونوافذ صغيرة تتبع الحرامي. */
     var compact = false
@@ -114,19 +115,23 @@ class GameEngine(
         jailW = jailH * 0.78f
         brain.ropeLength = thiefRadius * 1.3f
         jailMargin = 8f * density
-        brain.setArena(w, h)
+        brain.minY = topInset
+        brain.setArena(w, h - bottomInset)
         relayoutJail()
         if (brain.state == ThiefState.JAILED) brain.restoreJailed(jailCenterX(), jailCenterY())
     }
 
+    private fun rangeW() = (arenaW - jailW).coerceAtLeast(0f)
+    private fun rangeH() = (arenaH - bottomInset - topInset - jailH).coerceAtLeast(0f)
+
     private fun relayoutJail() {
         val px = settings.jailPosX; val py = settings.jailPosY
         if (px >= 0 && py >= 0) {
-            jailL = (px / 1000f) * (arenaW - jailW).coerceAtLeast(0f)
-            jailT = (py / 1000f) * (arenaH - jailH).coerceAtLeast(0f)
+            jailL = (px / 1000f) * rangeW()
+            jailT = topInset + (py / 1000f) * rangeH()
         } else {
             jailL = if (settings.jailCorner % 2 == 0) arenaW - jailW - jailMargin else jailMargin
-            jailT = if (settings.jailCorner < 2) jailMargin + topInset else arenaH - jailH - jailMargin
+            jailT = if (settings.jailCorner < 2) jailMargin + topInset else arenaH - bottomInset - jailH - jailMargin
         }
     }
 
@@ -283,8 +288,8 @@ class GameEngine(
         settings.jailVisible && x in jailL..(jailL + jailW) && y in jailT..(jailT + jailH)
 
     private fun moveJailTo(l: Float, t: Float) {
-        jailL = l.coerceIn(0f, (arenaW - jailW).coerceAtLeast(0f))
-        jailT = t.coerceIn(0f, (arenaH - jailH).coerceAtLeast(0f))
+        jailL = l.coerceIn(0f, rangeW())
+        jailT = t.coerceIn(topInset, topInset + rangeH())
         if (brain.state == ThiefState.JAILED) { brain.x = jailCenterX(); brain.y = jailCenterY() }
     }
 
@@ -293,10 +298,10 @@ class GameEngine(
     fun commitJailPosition() = saveJailPosition()
 
     private fun saveJailPosition() {
-        val rw = arenaW - jailW; val rh = arenaH - jailH
+        val rw = rangeW(); val rh = rangeH()
         if (rw <= 0f || rh <= 0f) return
         settings.jailPosX = ((jailL / rw) * 1000f).toInt().coerceIn(0, 1000)
-        settings.jailPosY = ((jailT / rh) * 1000f).toInt().coerceIn(0, 1000)
+        settings.jailPosY = (((jailT - topInset) / rh) * 1000f).toInt().coerceIn(0, 1000)
     }
 
     fun touchDown(x: Float, y: Float) {

@@ -86,6 +86,9 @@ class ThiefBrain(
     /** بعد الضربة بالنقر: يهرب ثم يختبئ وهو يتألم. */
     private var hurtHide = false
 
+    /** الحد الأعلى للحركة (مثلاً أسفل شريط الحالة في الوضع العائم). */
+    var minY = 0f
+
     private var arenaW = 800f
     private var arenaH = 600f
     private var stateDuration = 2f
@@ -100,7 +103,7 @@ class ThiefBrain(
         arenaW = w.coerceAtLeast(50f)
         arenaH = h.coerceAtLeast(50f)
         x = x.coerceIn(margin(), arenaW - margin())
-        y = y.coerceIn(margin(), arenaH - margin())
+        y = y.coerceIn(minY + margin(), (arenaH - margin()).coerceAtLeast(minY + margin()))
     }
 
     private fun margin() = 40f.coerceAtMost(minOf(arenaW, arenaH) * 0.2f)
@@ -169,7 +172,7 @@ class ThiefBrain(
                 hideFolderAlpha = 1f
                 if (stateTime >= stateDuration && !holdHidden) {
                     x = randomBetween(margin(), arenaW - margin())
-                    y = randomBetween(margin(), arenaH - margin())
+                    y = randomBetween(minY + margin(), arenaH - margin())
                     facing = if (x < arenaW / 2) 1 else -1
                     enter(ThiefState.FADE_IN, 0.7f)
                 }
@@ -270,7 +273,7 @@ class ThiefBrain(
         val m = margin()
         if (x < m) { x = m; facing = 1 }
         if (x > arenaW - m) { x = arenaW - m; facing = -1 }
-        if (y < m) { y = m; dirY = abs(dirY) }
+        if (y < minY + m) { y = minY + m; dirY = abs(dirY) }
         if (y > arenaH - m) { y = arenaH - m; dirY = -abs(dirY) }
     }
 
@@ -308,7 +311,7 @@ class ThiefBrain(
     /** يبدأ سرقة غنيمة موضوعة عند (lx, ly). */
     fun beginHeist(lx: Float, ly: Float, kind: LootKind): Boolean {
         if (state != ThiefState.RUN && state != ThiefState.STAND && state != ThiefState.LOOK) return false
-        lootX = lx.coerceIn(margin(), arenaW - margin()); lootY = ly.coerceIn(margin(), arenaH - margin())
+        lootX = lx.coerceIn(margin(), arenaW - margin()); lootY = ly.coerceIn(minY + margin(), (arenaH - margin()).coerceAtLeast(minY + margin()))
         lootKind = kind; carrying = false; stashPending = false
         facing = if (lootX >= x) 1 else -1
         enter(ThiefState.HEIST_GO, 12f)

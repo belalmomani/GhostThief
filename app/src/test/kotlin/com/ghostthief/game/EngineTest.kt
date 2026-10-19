@@ -195,4 +195,13 @@ class EngineTest {
         assertTrue(env.settings.jailPosX >= 0)
         assertTrue(Math.abs(env.engine().jailLeft() - 200f) < 2f)
     }
+
+    @Test fun insets_keepJailAndThiefBelowStatusBar() {
+        val env = Env(); val e = env.engine()
+        e.topInset = 100f; e.bottomInset = 150f; e.setArena(800f, 600f, 1f)
+        e.dragJailTo(0f, 0f); assertTrue(e.jailTop() >= 100f)
+        e.dragJailTo(0f, 9999f); assertTrue(e.jailTop() + e.jailH <= 600f - 150f + 0.5f)
+        advanceEngine(e, 20f)
+        assertTrue(e.brain.y >= 100f)
+    }
 }

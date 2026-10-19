@@ -13,7 +13,7 @@ import com.ghostthief.game.game.GameEngine
 import com.ghostthief.game.game.GameView
 import com.google.android.material.button.MaterialButton
 
-class GameActivity : AppCompatActivity() {
+class GameActivity : BaseActivity() {
     private lateinit var app: GhostThiefApp
     private lateinit var engine: GameEngine
     private lateinit var gameView: GameView
@@ -47,14 +47,11 @@ class GameActivity : AppCompatActivity() {
             com.ghostthief.game.game.HideSpots.loadAsync(this, app.settings.seekFolderUri) { names -> engine.seekNames = names }
         } else engine.seekNames = emptyList()
         com.ghostthief.game.game.LootLoader.loadAsync(this, app.settings) { engine.loots = it }
-        // لا نشغّل نسختين من اللعبة: نخفي النافذة العائمة أثناء وجود اللعبة في الواجهة
-        if (app.settings.floatingEnabled) AndroidOverlayEnvironment.sendToService(this, FloatingService.ACTION_HIDE)
         gameView.start()
     }
 
     override fun onPause() {
         gameView.pause() // لا نستهلك البطارية خارج اللعبة
-        if (app.settings.floatingEnabled) AndroidOverlayEnvironment.sendToService(this, FloatingService.ACTION_SHOW)
         app.sync.syncNow()
         super.onPause()
     }

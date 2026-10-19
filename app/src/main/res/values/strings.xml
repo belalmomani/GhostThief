@@ -87,8 +87,8 @@
     <string name="h_pick_apps">اختيار التطبيقات التي يسرقها (تمثيلاً)</string>
     <string name="h_scan">فحص المجلد وعرض أسماء الملفات</string>
     <string name="h_dialog_title">اختيار تطبيقات للسرقة التمثيلية</string>
-    <string name="h_dialog_msg">ستظهر قائمة بالتطبيقات القابلة للتشغيل على هاتفك لتختار منها بنفسك (حتى 8). نستخدم اسم التطبيق وأيقونته وحجمه للعرض داخل اللعبة فقط. لن نحذف أو نعدّل أو نخفي أي تطبيق، ولن نرسل القائمة لأي جهة.</string>
-    <string name="h_pick_title">اختر حتى 8 تطبيقات</string>
+    <string name="h_dialog_msg">ستظهر قائمة بالتطبيقات القابلة للتشغيل على هاتفك لتختار منها بنفسك (ويمكنك تحديد الكل). نستخدم اسم التطبيق وأيقونته وحجمه للعرض داخل اللعبة فقط. لن نحذف أو نعدّل أو نخفي أي تطبيق، ولن نرسل القائمة لأي جهة.</string>
+    <string name="h_pick_title">اختر التطبيقات</string>
     <string name="h_saved">تم حفظ اختيارك (%1$d)</string>
     <string name="h_scan_empty">لم نجد ملفات. اختر مجلداً أولاً من «وضع البحث».</string>
     <string name="h_scan_title">وجدنا %1$d ملفاً</string>
@@ -103,4 +103,7 @@
     <string name="s_cloud_hint_anon">الحل: في Firebase Console افتح Authentication ← Sign-in method ← فعّل «Anonymous» ثم اضغط «زامن الآن».</string>
     <string name="s_cloud_hint_rules">الحل: أنشئ قاعدة Firestore وانشر ملف firestore.rules من المشروع.</string>
     <string name="h_scan_none_fmt">لم نجد ملفات داخل المجلد (وجدنا %1$d مجلداً فرعياً). اختر مجلداً يحتوي ملفات.</string>
+    <string name="h_select_all">تحديد الكل</string>
+    <string name="h_deselect_all">إلغاء التحديد</string>
+    <string name="h_saved_trimmed">تم حفظ أول %1$d تطبيقاً (الحد الأقصى)</string>
 </resources>

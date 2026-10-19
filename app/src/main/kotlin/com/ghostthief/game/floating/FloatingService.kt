@@ -11,7 +11,9 @@ import android.content.pm.ServiceInfo
 import android.graphics.PixelFormat
 import android.net.Uri
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.provider.Settings as SysSettings
 import android.view.Gravity
 import android.view.View
@@ -24,6 +26,7 @@ import com.ghostthief.game.GhostThiefApp
 import com.ghostthief.game.R
 import com.ghostthief.game.game.GameEngine
 import com.ghostthief.game.game.GameView
+import com.ghostthief.game.ui.AppVisibility
 import com.ghostthief.game.ui.MainActivity
 
 /**
@@ -45,6 +48,15 @@ class FloatingService : Service() {
     private var screenH = 0
     private var actorShown = true
     private var jailShown = true
+    private val handler = Handler(Looper.getMainLooper())
+    /** يخفي النافذتين تلقائياً عندما تكون واجهة اللعبة نفسها ظاهرة، ويعيدهما عند الخروج منها. */
+    private val visibilityPoll = object : Runnable {
+        override fun run() {
+            val s = AppVisibility.started > 0
+            if (s != suspended) { suspended = s; applyVisibility() }
+            handler.postDelayed(this, 300)
+        }
+    }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -94,8 +106,10 @@ class FloatingService : Service() {
         val dm = resources.displayMetrics
         val density = dm.density
         screenW = dm.widthPixels; screenH = dm.heightPixels
+        val sb = dimenPx("status_bar_height"); val nb = dimenPx("navigation_bar_height")
         val eng = GameEngine(app.settings, app.progress).also {
             it.compact = true
+            it.topInset = sb.toFloat(); it.bottomInset = nb.toFloat() // لا نغطي شريط الحالة ولا أزرار التنقل
             it.sizeFactor = when (app.settings.floatSize) { 1 -> 0.8f; 2 -> 1f; else -> 0.65f }
             it.setArena(screenW.toFloat(), screenH.toFloat(), density)
             LootLoader.loadAsync(this, app.settings) { loots -> it.loots = loots }
@@ -125,6 +139,8 @@ class FloatingService : Service() {
             x = (eng.jailLeft() - pad).toInt().coerceIn(0, (screenW - jw).coerceAtLeast(0))
             y = (eng.jailTop() - pad).toInt().coerceIn(0, (screenH - jh).coerceAtLeast(0))
         }
+        val jailMinY = (sb - pad.toInt()).coerceAtLeast(0)
+        val jailMaxY = (screenH - nb - jh).coerceAtLeast(jailMinY)
         val jv = GameView(this).apply {
             role = GameView.Role.JAIL
             engine = eng
@@ -132,9 +148,10 @@ class FloatingService : Service() {
             onCloseRequested = { shutdown() }
             onJailDrag = { dx, dy ->
                 jLp.x = (jLp.x + dx.toInt()).coerceIn(0, (screenW - jw).coerceAtLeast(0))
-                jLp.y = (jLp.y + dy.toInt()).coerceIn(0, (screenH - jh).coerceAtLeast(0))
-                originX = jLp.x.toFloat(); originY = jLp.y.toFloat()
+                jLp.y = (jLp.y + dy.toInt()).coerceIn(jailMinY, jailMaxY)
                 eng.dragJailTo(jLp.x + pad, jLp.y + pad)
+                jLp.x = (eng.jailLeft() - pad).toInt(); jLp.y = (eng.jailTop() - pad).toInt() // مطابقة حدود المحرك
+                originX = jLp.x.toFloat(); originY = jLp.y.toFloat()
                 try { wm?.updateViewLayout(this, jLp) } catch (_: Throwable) {}
             }
             onJailDragEnd = { eng.commitJailPosition() }
@@ -144,7 +161,9 @@ class FloatingService : Service() {
             wm?.addView(jv, jLp)
             wm?.addView(av, aLp)
             actor = av; jailView = jv; actorLp = aLp; jailLp = jLp
+            suspended = AppVisibility.started > 0 // لا نظهر النافذتين فوق واجهة اللعبة نفسها
             applyVisibility()
+            handler.removeCallbacks(visibilityPoll); handler.post(visibilityPoll)
         } catch (t: Throwable) {
             shutdown() // النظام رفض النافذة: لا نعطّل التطبيق
         }
@@ -175,7 +194,13 @@ class FloatingService : Service() {
         jailView?.visibility = if (suspended || !jailShown) View.GONE else View.VISIBLE
     }
 
+    private fun dimenPx(name: String): Int {
+        val id = resources.getIdentifier(name, "dimen", "android")
+        return if (id > 0) resources.getDimensionPixelSize(id) else 0
+    }
+
     private fun removeViews() {
+        handler.removeCallbacks(visibilityPoll)
         actor?.let { try { wm?.removeView(it) } catch (_: Throwable) {} }
         jailView?.let { try { wm?.removeView(it) } catch (_: Throwable) {} }
         actor = null; jailView = null

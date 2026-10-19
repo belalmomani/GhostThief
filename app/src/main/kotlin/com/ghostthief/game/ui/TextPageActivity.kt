@@ -11,7 +11,7 @@ import com.ghostthief.game.BuildConfig
 import com.ghostthief.game.R
 
 /** صفحتا "سياسة الخصوصية" و"حول اللعبة". نص الخصوصية يعكس ما هو مضمّن فعلياً في هذا البناء. */
-class TextPageActivity : AppCompatActivity() {
+class TextPageActivity : BaseActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val which = intent.getStringExtra(EXTRA) ?: ABOUT
