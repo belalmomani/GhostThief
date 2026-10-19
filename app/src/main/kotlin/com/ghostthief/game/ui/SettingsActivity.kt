@@ -160,6 +160,26 @@ class SettingsActivity : BaseActivity() {
         toggle(R.string.s_ads, s.adsEnabled && adsAvail, adsAvail) { s.adsEnabled = it }
         if (!adsAvail) col.addView(TextView(this).apply { text = getString(R.string.s_ads_unavailable); textSize = 13f })
 
+        // قفل الأهل
+        label(R.string.s_parent)
+        val lockStatus = TextView(this).apply { textSize = 14f; setTextColor(0xFF546E7A.toInt()) }
+        fun refreshLock() { lockStatus.text = getString(if (app.parentLock.isSet()) R.string.s_parent_on else R.string.s_parent_off) }
+        col.addView(lockStatus); refreshLock()
+        col.addView(MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+            text = getString(R.string.s_parent_set)
+            setOnClickListener { PinDialogs.ask(this@SettingsActivity, app.parentLock) { PinDialogs.setNew(this@SettingsActivity, app.parentLock) { refreshLock() } } }
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, (52 * d).toInt()))
+        col.addView(MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+            text = getString(R.string.s_parent_remove)
+            setOnClickListener {
+                if (app.parentLock.isSet()) PinDialogs.ask(this@SettingsActivity, app.parentLock) { app.parentLock.clear(); refreshLock(); Toast.makeText(this@SettingsActivity, R.string.pin_removed, Toast.LENGTH_SHORT).show() }
+            }
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, (52 * d).toInt()))
+        col.addView(TextView(this).apply { text = getString(R.string.s_parent_hint); textSize = 13f; setTextColor(0xFF546E7A.toInt()) })
+        col.addView(MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+            text = getString(R.string.s_guide); setOnClickListener { startActivity(android.content.Intent(this@SettingsActivity, OnboardingActivity::class.java)) }
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, (52 * d).toInt()))
+
         col.addView(MaterialButton(this).apply {
             text = getString(R.string.s_reset); setBackgroundColor(0xFFC62828.toInt())
             setOnClickListener { confirmReset() }

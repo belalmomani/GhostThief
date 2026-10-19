@@ -28,12 +28,16 @@ data class Progress(
     }
 }
 
-enum class Achievement(val id: String, val atCaptures: Int = 0) {
+enum class Achievement(val id: String, val atCaptures: Int = 0, val special: Boolean = false) {
     FIRST("first_catch", 1),
     FIVE("five_catches", 5),
     TWENTY_FIVE("twenty_five_catches", 25),
     HUNDRED("hundred_catches", 100),
-    CIRCLE_MASTER("circle_master")
+    CIRCLE_MASTER("circle_master", special = true),
+    /** تُمنح من أحداث اللعب (لا من عدد القبضات). */
+    FIRST_RESCUE("first_rescue", special = true),
+    LARGE_RESCUE("large_rescue", special = true),
+    SHARP_EYES("sharp_eyes", special = true)
 }
 
 data class CaptureReward(
@@ -46,6 +50,17 @@ object ScoreRules {
     const val BASE_POINTS = 10
     const val CIRCLE_BONUS = 5
     const val CIRCLE_MASTER_COUNT = 10
+    const val SEEK_BASE = 5
+    /** عدد الثواني للإنجاز «عين الصقر». */
+    const val SHARP_EYES_SECONDS = 5f
+
+    /** مكافأة السرعة في العثور على الحرامي: كلما كان أسرع زادت النقاط. */
+    fun seekSpeedBonus(seconds: Float): Int = when {
+        seconds <= 5f -> 15
+        seconds <= 10f -> 10
+        seconds <= 20f -> 5
+        else -> 0
+    }
 
     /** مكافأة متدرجة عند بلوغ عدد معيّن من مرات القبض. */
     fun tierBonus(totalCapturesAfter: Int): Int = when (totalCapturesAfter) {
@@ -66,7 +81,11 @@ object ScoreRules {
         val earned = mutableListOf<Achievement>()
         for (a in Achievement.values()) {
             if (a.id in p.achievements) continue
-            val ok = if (a == Achievement.CIRCLE_MASTER) circles >= CIRCLE_MASTER_COUNT else captures >= a.atCaptures
+            val ok = when {
+                a == Achievement.CIRCLE_MASTER -> circles >= CIRCLE_MASTER_COUNT
+                a.special -> false
+                else -> captures >= a.atCaptures
+            }
             if (ok) earned += a
         }
         val next = p.copy(

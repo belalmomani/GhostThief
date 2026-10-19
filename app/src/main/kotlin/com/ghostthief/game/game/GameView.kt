@@ -252,26 +252,36 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
                 drawSprite(c, sp.run[(b.runClock * 6f).toInt() % 4], x + shake, y, b.scale, flip, 1f)
             }
             ThiefState.ESCAPING -> drawSprite(c, sp.run[(b.stateTime * 12f).toInt() % 4], x, y, b.scale, flip, 1f)
-            ThiefState.STAND, ThiefState.LOOK -> drawSprite(c, sp.stand, x, y + bob(b.stateTime), 1f, flip, 1f)
-            ThiefState.SURPRISED -> {
+            ThiefState.STAND -> drawSprite(c, sp.stand, x, y + bob(b.stateTime), 1f, flip, 1f)
+            ThiefState.LOOK -> { // ينظر حوله: يلتفت وتظهر علامة استفهام
+                drawSprite(c, sp.stand, x, y + bob(b.stateTime), 1f, flip, 1f)
+                drawFx(c, sp.question, x + (if (flip) -1 else 1) * thiefRadius() * 0.9f, y - thiefRadius() * 1.5f, thiefRadius() * 0.9f, 0f, 1f)
+            }
+            ThiefState.SURPRISED -> { // ضربة خفيفة: نجوم تدور فوق رأسه
                 drawSprite(c, sp.stand, x, y, 1f, flip, 1f)
-                p.color = Color.parseColor("#1E88E5"); p.strokeWidth = 4f * density; p.style = Paint.Style.STROKE
-                val ox = x + (if (flip) -1 else 1) * thiefRadius() * 0.9f; val oy = y - thiefRadius() * 1.1f
-                c.drawLine(ox, oy, ox + 10f * density, oy - 12f * density, p)
-                c.drawLine(ox + 14f * density, oy + 4f * density, ox + 28f * density, oy - 4f * density, p)
-                p.style = Paint.Style.FILL
+                drawFx(c, sp.stars, x, y - thiefRadius() * 1.15f, thiefRadius() * 1.5f, b.stateTime * 420f, 1f)
             }
             ThiefState.FADE_OUT, ThiefState.FADE_IN -> {
                 val a = b.alpha
                 drawSprite(c, sp.run[0], x, y, 1f, flip, a)
                 drawSprite(c, sp.ghost, x, y, 1f, flip, 4f * a * (1f - a))
                 drawFolder(c, sp, b.hideX, b.hideY, b.hideVariant, b.hideFolderAlpha)
+                drawFx(c, sp.poof, x, y, thiefRadius() * (1.4f + 0.8f * (1f - a)), 0f, 4f * a * (1f - a))
             }
             ThiefState.HIDDEN -> if (e.seekActive) drawSeekSpots(c, e) else drawFolder(c, sp, b.hideX, b.hideY, b.hideVariant, b.hideFolderAlpha)
             ThiefState.HELD -> drawSprite(c, sp.caught, x, y, 0.8f, false, 1f)
             ThiefState.CAUGHT -> drawSprite(c, sp.caught, x, y, b.scale, false, 1f)
             ThiefState.JAILED -> {}
         }
+    }
+
+    /** مؤثر مرسوم (سحابة/نجوم/استفهام) بحجم معيّن وزاوية دوران. */
+    private fun drawFx(c: Canvas, bmp: Bitmap, cx: Float, cy: Float, size: Float, rotation: Float, alpha: Float) {
+        val s = size / bmp.width
+        p.alpha = (alpha.coerceIn(0f, 1f) * 255).toInt()
+        c.save(); c.translate(cx, cy); c.rotate(rotation); c.scale(s, s)
+        c.drawBitmap(bmp, -bmp.width / 2f, -bmp.height / 2f, p)
+        c.restore(); p.alpha = 255
     }
 
     private fun bob(t: Float) = (sin(t * 6f) * 2f * density)
@@ -398,24 +408,23 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
                 textPaint.clearShadowLayer()
             }
         } else if (st == ThiefState.CAUGHT && e.brain.stateTime > 0.75f) {
-            drawEmptyJail(c, l, t, w, h, 1f - ((e.brain.stateTime - 0.75f) / 0.15f).coerceIn(0f, 1f))
+            drawEmptyJail(c, l, t, w, h, 1f - ((e.brain.stateTime - 0.75f) / 0.15f).coerceIn(0f, 1f), sp)
             p.alpha = (((e.brain.stateTime - 0.75f) / 0.15f).coerceIn(0f, 1f) * 255).toInt()
             c.drawBitmap(sp.cageClosing, null, RectF(l, t, l + w, t + h), p); p.alpha = 255
+        } else if (st == ThiefState.ESCAPING && e.brain.stateTime < 0.9f) { // الباب مفتوح وسحابة غبار
+            c.drawBitmap(sp.jailOpen, null, RectF(l, t, l + w, t + h), p)
+            drawFx(c, sp.poof, l + w / 2f, t + h / 2f, w * 1.6f, 0f, 1f - e.brain.stateTime / 0.9f)
         } else {
-            drawEmptyJail(c, l, t, w, h, 1f)
+            drawEmptyJail(c, l, t, w, h, 1f, sp)
         }
     }
 
-    /** سجن فارغ مرسوم برمجياً (شفاف، بقضبان). */
-    private fun drawEmptyJail(c: Canvas, l: Float, t: Float, w: Float, h: Float, a: Float) {
+    /** السجن الفارغ (صورة شفافة بنفس ألوان السجن الأصلي). */
+    private fun drawEmptyJail(c: Canvas, l: Float, t: Float, w: Float, h: Float, a: Float, sp: Sprites) {
         if (a <= 0f) return
-        p.style = Paint.Style.FILL; p.color = Color.argb((50 * a).toInt(), 150, 200, 255)
-        c.drawRoundRect(l, t, l + w, t + h, 8f * density, 8f * density, p)
-        p.style = Paint.Style.STROKE; p.strokeWidth = 3f * density; p.color = Color.argb((200 * a).toInt(), 120, 175, 235)
-        c.drawRoundRect(l, t, l + w, t + h, 8f * density, 8f * density, p)
-        p.strokeWidth = 2.5f * density
-        for (i in 1..4) { val bx = l + w * i / 5f; c.drawLine(bx, t + 4f * density, bx, t + h - 4f * density, p) }
-        p.style = Paint.Style.FILL
+        p.alpha = (a.coerceIn(0f, 1f) * 255).toInt()
+        c.drawBitmap(sp.jailEmpty, null, RectF(l, t, l + w, t + h), p)
+        p.alpha = 255
     }
 
     /** زر ✕ ملاصق لزاوية السجن (يغلق الوضع العائم كله). */

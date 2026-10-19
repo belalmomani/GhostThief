@@ -82,6 +82,11 @@ class Settings(private val kv: KeyValueStore) {
         get() = kv.getInt("float_size", 0).coerceIn(0, 2)
         set(v) = kv.put("float_size", v.coerceIn(0, 2))
 
+    /** هل شاهد المستخدم الدليل التعريفي؟ */
+    var onboardingDone: Boolean
+        get() = kv.getBoolean("onboarding_done", false)
+        set(v) = kv.put("onboarding_done", v)
+
     fun resetSettings() {
         for (k in listOf(
             "speed_percent", "jail_minutes", "volume_percent", "sound_enabled", "effects_enabled",

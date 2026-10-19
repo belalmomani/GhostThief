@@ -37,20 +37,28 @@ class MainActivity : BaseActivity() {
         swFloating = findViewById(R.id.swFloating)
         swJail = findViewById(R.id.swJail)
 
-        findViewById<MaterialButton>(R.id.btnStart).setOnClickListener { startActivity(Intent(this, GameActivity::class.java)) }
+        findViewById<MaterialButton>(R.id.btnStart).setOnClickListener { startActivity(GameActivity.intent(this)) }
         findViewById<MaterialButton>(R.id.btnStop).setOnClickListener {
             controller.disable()
             refresh()
             Toast.makeText(this, R.string.play_stopped, Toast.LENGTH_SHORT).show()
         }
-        findViewById<MaterialButton>(R.id.btnSettings).setOnClickListener { startActivity(Intent(this, SettingsActivity::class.java)) }
+        findViewById<MaterialButton>(R.id.btnSettings).setOnClickListener {
+            PinDialogs.ask(this, app.parentLock) { startActivity(Intent(this, SettingsActivity::class.java)) }
+        }
+        findViewById<MaterialButton>(R.id.btnKid).setOnClickListener { startKidMode() }
+        findViewById<MaterialButton>(R.id.btnAchievements).setOnClickListener { showAchievements() }
+        if (!app.settings.onboardingDone) startActivity(Intent(this, OnboardingActivity::class.java))
         findViewById<MaterialButton>(R.id.btnPrivacy).setOnClickListener { TextPageActivity.open(this, TextPageActivity.PRIVACY) }
         findViewById<MaterialButton>(R.id.btnAbout).setOnClickListener { TextPageActivity.open(this, TextPageActivity.ABOUT) }
 
         swJail.setOnCheckedChangeListener { _, on -> if (!binding) app.settings.jailVisible = on }
         swFloating.setOnCheckedChangeListener { _, on ->
             if (binding) return@setOnCheckedChangeListener
-            if (on) askFloating() else controller.disable()
+            // تشغيل/إيقاف الوضع العائم محميان بقفل الأهل (إن كان مفعّلاً)
+            PinDialogs.ask(this, app.parentLock, onCancel = { refresh() }) {
+                if (on) askFloating() else { controller.disable(); refresh() }
+            }
         }
     }
 
@@ -101,5 +109,41 @@ class MainActivity : BaseActivity() {
         if (Build.VERSION.SDK_INT >= 33 &&
             ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) notifPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+    }
+
+    /** وضع الطفل: تظهر اللعبة فوق شاشة القفل ولا يخرج منها إلا بالرمز. */
+    private fun startKidMode() {
+        if (!app.parentLock.isSet()) {
+            AlertDialog.Builder(this)
+                .setTitle(R.string.kid_need_pin_title)
+                .setMessage(R.string.kid_need_pin_msg)
+                .setPositiveButton(R.string.continue_btn) { _, _ -> PinDialogs.setNew(this, app.parentLock) { showKidInfo() } }
+                .setNegativeButton(R.string.cancel, null)
+                .show()
+        } else showKidInfo()
+    }
+
+    private fun showKidInfo() {
+        AlertDialog.Builder(this)
+            .setTitle(R.string.kid_mode)
+            .setMessage(R.string.kid_info_msg)
+            .setPositiveButton(R.string.kid_start) { _, _ -> startActivity(GameActivity.intent(this, kid = true)) }
+            .setNegativeButton(R.string.cancel, null)
+            .show()
+    }
+
+    private fun showAchievements() {
+        val have = app.progress.load().achievements
+        val rows = listOf(
+            "first_catch" to R.string.ach_first_catch, "five_catches" to R.string.ach_five_catches,
+            "twenty_five_catches" to R.string.ach_25, "hundred_catches" to R.string.ach_100,
+            "circle_master" to R.string.ach_circle, "first_rescue" to R.string.ach_first_rescue,
+            "large_rescue" to R.string.ach_large_rescue, "sharp_eyes" to R.string.ach_sharp_eyes
+        ).map { (id, res) -> (if (id in have) "✅ " else "🔒 ") + getString(res) }
+        AlertDialog.Builder(this)
+            .setTitle(R.string.achievements)
+            .setItems(rows.toTypedArray(), null)
+            .setPositiveButton(android.R.string.ok, null)
+            .show()
     }
 }

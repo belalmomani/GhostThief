@@ -37,6 +37,12 @@
             android:layout_width="match_parent" android:layout_height="56dp"
             android:layout_marginTop="8dp" android:text="@string/stop_play" android:textSize="18sp" />
 
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnKid"
+            style="@style/Widget.Material3.Button.TonalButton"
+            android:layout_width="match_parent" android:layout_height="56dp"
+            android:layout_marginTop="8dp" android:text="@string/kid_mode" android:textSize="17sp" />
+
         <com.google.android.material.materialswitch.MaterialSwitch
             android:id="@+id/swFloating"
             android:layout_width="match_parent" android:layout_height="wrap_content"
@@ -54,10 +60,16 @@
             android:text="@string/show_jail" android:textSize="17sp" />
 
         <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnAchievements"
+            style="@style/Widget.Material3.Button.TonalButton"
+            android:layout_width="match_parent" android:layout_height="56dp"
+            android:layout_marginTop="12dp" android:text="@string/achievements" android:textSize="17sp" />
+
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/btnSettings"
             style="@style/Widget.Material3.Button.TonalButton"
             android:layout_width="match_parent" android:layout_height="56dp"
-            android:layout_marginTop="12dp" android:text="@string/settings" android:textSize="17sp" />
+            android:layout_marginTop="8dp" android:text="@string/settings" android:textSize="17sp" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnPrivacy"

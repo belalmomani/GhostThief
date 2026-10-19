@@ -1,6 +1,10 @@
 package com.ghostthief.game.ui
 
+import android.content.Context
+import android.content.Intent
+import android.os.Build
 import android.os.Bundle
+import android.view.WindowManager
 import android.view.View
 import android.view.ViewGroup
 import androidx.activity.OnBackPressedCallback
@@ -17,9 +21,12 @@ class GameActivity : BaseActivity() {
     private lateinit var app: GhostThiefApp
     private lateinit var engine: GameEngine
     private lateinit var gameView: GameView
+    private var kid = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        kid = intent.getBooleanExtra(EXTRA_KID, false)
+        if (kid) enableLockScreenPlay()
         setContentView(R.layout.activity_game)
         app = GhostThiefApp.of(this)
         engine = GameEngine(app.settings, app.progress)
@@ -35,9 +42,11 @@ class GameActivity : BaseActivity() {
             override fun handleOnBackPressed() = leave()
         })
 
-        val container = findViewById<ViewGroup>(R.id.adContainer)
-        app.ads.init(this)
-        app.ads.attachBanner(container) // لا يعمل إلا في نكهة ads وبعد تفعيل المستخدم/الأب
+        if (!kid) { // لا إعلانات في وضع الطفل (فوق شاشة القفل)
+            val container = findViewById<ViewGroup>(R.id.adContainer)
+            app.ads.init(this)
+            app.ads.attachBanner(container)
+        }
     }
 
     override fun onResume() {
@@ -57,12 +66,32 @@ class GameActivity : BaseActivity() {
     }
 
     override fun onDestroy() {
-        app.ads.detachBanner()
+        if (!kid) app.ads.detachBanner()
         super.onDestroy()
     }
 
     /** الخروج هو نقطة الانتقال الطبيعية الوحيدة التي قد يظهر عندها إعلان بيني. */
     private fun leave() {
+        if (kid) { // الخروج من وضع الطفل يحتاج رمز الأهل
+            PinDialogs.ask(this, app.parentLock) { finish() }
+            return
+        }
         app.ads.maybeShowInterstitial(this, engine.isBusy()) { if (!isFinishing) finish() }
+    }
+
+    /** تظهر اللعبة فوق شاشة القفل وتوقظ الشاشة؛ الهاتف يبقى مقفلاً فلا يصل الطفل لبقية التطبيقات. */
+    private fun enableLockScreenPlay() {
+        if (Build.VERSION.SDK_INT >= 27) {
+            setShowWhenLocked(true); setTurnScreenOn(true)
+        } else {
+            @Suppress("DEPRECATION")
+            window.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON)
+        }
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    }
+
+    companion object {
+        private const val EXTRA_KID = "kid"
+        fun intent(ctx: Context, kid: Boolean = false): Intent = Intent(ctx, GameActivity::class.java).putExtra(EXTRA_KID, kid)
     }
 }

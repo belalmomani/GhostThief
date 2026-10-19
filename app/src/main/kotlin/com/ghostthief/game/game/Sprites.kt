@@ -21,6 +21,11 @@ class Sprites(context: Context) {
     val folders = listOf(R.drawable.folder_peek, R.drawable.folder_yellow, R.drawable.folder_blue).map { load(it) }
     val cageClosing = load(R.drawable.cage_closing)
     val cageLocked = load(R.drawable.cage_locked)
+    val jailEmpty = load(R.drawable.jail_empty)
+    val jailOpen = load(R.drawable.jail_open)
+    val poof = load(R.drawable.fx_poof)
+    val stars = load(R.drawable.fx_stars)
+    val question = load(R.drawable.fx_question)
 
     /** ارتفاع إطار الركض المرجعي لتوحيد مقياس كل حالات الشخصية. */
     val refHeight: Float get() = run[0].height.toFloat()

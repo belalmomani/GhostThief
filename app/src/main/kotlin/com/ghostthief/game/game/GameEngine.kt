@@ -19,7 +19,7 @@ interface GameListener {
     fun onLootMessage(msg: GameMessage, name: String, points: Int = 0) {}
 }
 
-enum class SoundEffect { POP, CATCH, FAIL, ESCAPE, OUCH }
+enum class SoundEffect { POP, CATCH, FAIL, ESCAPE, OUCH, CLANG, DING }
 
 /** مكان اختباء في وضع البحث. الاسم يأتي من مجلد اختاره المستخدم (يبقى في الذاكرة فقط). */
 class SeekSpot(val x: Float, val y: Float, val name: String) { var wrong = false }
@@ -175,7 +175,7 @@ class GameEngine(
         if (brain.state == ThiefState.JAILED) { brain.x = jailCenterX(); brain.y = jailCenterY() }
         if (brain.arrivedInJail) {
             capture.finish()
-            listener?.onSound(SoundEffect.CATCH)
+            listener?.onSound(SoundEffect.CLANG) // صوت إغلاق السجن
         }
         if (brain.state == ThiefState.JAILED && jail.isExpired()) {
             jail.clear()
@@ -231,6 +231,10 @@ class GameEngine(
     }
 
     // ---------- وضع البحث ----------
+    private fun unlock(a: Achievement) {
+        if (progress.unlock(a.id)) listener?.onMessage(GameMessage.ACHIEVEMENT, 1)
+    }
+
     private fun seekAvailable() = settings.seekEnabled && seekNames.isNotEmpty() && !compact
 
     private fun maybeStartSeek() {
@@ -274,9 +278,12 @@ class GameEngine(
         seekActive = false
         brain.revealAt(s.x, s.y)
         if (found) {
-            progress.awardPoints(SEEK_BONUS)
-            listener?.onMessage(GameMessage.FOUND, SEEK_BONUS)
-            listener?.onSound(SoundEffect.CATCH)
+            // كلما وجدته أسرع زادت النقاط
+            val total = ScoreRules.SEEK_BASE + ScoreRules.seekSpeedBonus(seekTime)
+            progress.awardPoints(total)
+            listener?.onMessage(GameMessage.FOUND, total)
+            listener?.onSound(SoundEffect.DING)
+            if (seekTime <= ScoreRules.SHARP_EYES_SECONDS) unlock(Achievement.SHARP_EYES)
         }
     }
 
@@ -389,10 +396,14 @@ class GameEngine(
             val bonus = LootRules.rescueBonus(rescued)
             progress.awardPoints(bonus)
             listener?.onLootMessage(GameMessage.RESCUED, loot.name, bonus)
+            listener?.onSound(SoundEffect.DING)
+            unlock(Achievement.FIRST_RESCUE)
+            if (rescued == LootKind.LARGE) unlock(Achievement.LARGE_RESCUE)
         }
         if (brain.lootKind == null) currentLoot = null
         val reward = progress.recordCapture(source == CaptureSource.CIRCLE)
         pointerDown = false; threadProgress = 0f; path.clear()
+        listener?.onSound(SoundEffect.CATCH)
         listener?.onMessage(if (reward.bonusTier) GameMessage.CAUGHT_BONUS else GameMessage.CAUGHT, reward.pointsGained)
         if (reward.newAchievements.isNotEmpty()) listener?.onMessage(GameMessage.ACHIEVEMENT, reward.newAchievements.size)
         return true

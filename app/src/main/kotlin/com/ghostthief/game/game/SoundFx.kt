@@ -19,7 +19,9 @@ class SoundFx(context: Context, private val settings: Settings) {
         SoundEffect.CATCH to pool.load(context, R.raw.sfx_catch, 1),
         SoundEffect.FAIL to pool.load(context, R.raw.sfx_fail, 1),
         SoundEffect.ESCAPE to pool.load(context, R.raw.sfx_escape, 1),
-        SoundEffect.OUCH to pool.load(context, R.raw.sfx_ouch, 1)
+        SoundEffect.OUCH to pool.load(context, R.raw.sfx_ouch, 1),
+        SoundEffect.CLANG to pool.load(context, R.raw.sfx_clang, 1),
+        SoundEffect.DING to pool.load(context, R.raw.sfx_ding, 1)
     )
 
     fun play(e: SoundEffect) {

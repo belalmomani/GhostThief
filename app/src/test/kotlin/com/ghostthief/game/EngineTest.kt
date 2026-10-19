@@ -128,7 +128,8 @@ class EngineTest {
         assertFalse(e.seekActive)
         advanceEngine(e, 0.6f)
         assertEquals(ThiefState.RUN, e.brain.state)
-        assertEquals(5, env.repo.load().points)
+        assertEquals(5 + 15, env.repo.load().points) // أساس 5 + مكافأة سرعة (أقل من 5 ثوان)
+        assertTrue("sharp_eyes" in env.repo.load().achievements)
     }
 
     @Test fun seekMode_off_usesNormalHiding() {
@@ -203,5 +204,25 @@ class EngineTest {
         e.dragJailTo(0f, 9999f); assertTrue(e.jailTop() + e.jailH <= 600f - 150f + 0.5f)
         advanceEngine(e, 20f)
         assertTrue(e.brain.y >= 100f)
+    }
+
+    @Test fun slowFind_givesNoSpeedBonus_andNoSharpEyes() {
+        val env = Env(); env.settings.seekEnabled = true
+        val e = env.engine(); e.seekNames = listOf("A", "B", "C")
+        e.brain.forceHide(); advanceEngine(e, 1.0f)
+        advanceEngine(e, 25f)
+        val real = e.seekSpots[e.seekRealIndex]
+        e.touchDown(real.x, real.y)
+        assertEquals(5, env.repo.load().points)
+        assertFalse("sharp_eyes" in env.repo.load().achievements)
+    }
+
+    @Test fun rescuingLargeLoot_unlocksRescueAchievements() {
+        val env = Env(); env.settings.heistEnabled = true
+        val e = env.engine(); e.loots = listOf(com.ghostthief.game.logic.Loot("Big", 500L * 1024 * 1024, true))
+        e.triggerHeist(); e.brain.x = e.brain.lootX - 20f; e.brain.y = e.brain.lootY
+        advanceEngine(e, 0.3f); e.beginCapture(CaptureSource.CIRCLE)
+        val ach = env.repo.load().achievements
+        assertTrue("first_rescue" in ach && "large_rescue" in ach)
     }
 }

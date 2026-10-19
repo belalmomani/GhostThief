@@ -31,6 +31,15 @@ class ProgressRepository(private val kv: KeyValueStore) {
         return reward
     }
 
+    /** يفتح إنجازاً (مرة واحدة). يرجع true إذا كان جديداً. */
+    fun unlock(id: String): Boolean {
+        val p = load()
+        if (id in p.achievements) return false
+        save(p.copy(achievements = p.achievements + id))
+        kv.put("dirty", true)
+        return true
+    }
+
     /** نقاط إضافية (مثل مكافأة العثور على الحرامي في وضع البحث). */
     fun awardPoints(n: Int) {
         if (n <= 0) return
