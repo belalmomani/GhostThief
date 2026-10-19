@@ -3,7 +3,10 @@ package com.ghostthief.game.game
 import com.ghostthief.game.data.ProgressRepository
 import com.ghostthief.game.data.Settings
 import com.ghostthief.game.logic.*
+import kotlin.math.PI
+import kotlin.math.cos
 import kotlin.math.hypot
+import kotlin.math.sin
 import kotlin.math.min
 import kotlin.random.Random
 
@@ -42,6 +45,11 @@ class GameEngine(
     var jailW = 130f; var jailH = 160f
     var jailMargin = 16f
     var topInset = 0f
+
+    /** الوضع العائم المدمج: الساحة = الشاشة كلها، ونوافذ صغيرة تتبع الحرامي. */
+    var compact = false
+    /** مقياس حجم الحرامي (للنافذة العائمة). */
+    var sizeFactor = 1f
 
     // موضع السجن (يُحسب من الزاوية أو من الموضع المخصص الذي سحبه اللاعب)
     private var jailL = 0f
@@ -100,9 +108,11 @@ class GameEngine(
     fun setArena(w: Float, h: Float, density: Float) {
         arenaW = w; arenaH = h
         // الأحجام تتناسب مع مساحة الساحة (مهم للنافذة العائمة الصغيرة)
-        thiefRadius = minOf(48f * density, h * 0.17f).coerceAtLeast(20f * density)
-        jailH = minOf(72f * density, h * 0.36f)
+        val baseRadius = minOf(48f * density, h * 0.17f).coerceAtLeast(20f * density)
+        thiefRadius = baseRadius * sizeFactor
+        jailH = minOf(72f * density, h * 0.36f) * maxOf(sizeFactor, 0.8f)
         jailW = jailH * 0.78f
+        brain.ropeLength = thiefRadius * 1.3f
         jailMargin = 8f * density
         brain.setArena(w, h)
         relayoutJail()
@@ -200,8 +210,15 @@ class GameEngine(
 
     private fun startHeist() {
         val loot = loots.random(rnd)
-        val lx = arenaW * (0.2f + 0.6f * rnd.nextFloat())
-        val ly = arenaH * (0.3f + 0.4f * rnd.nextFloat())
+        val lx: Float; val ly: Float
+        if (compact) { // في الوضع العائم تظهر الغنيمة قرب الحرامي (النافذة صغيرة)
+            val ang = rnd.nextFloat() * 2f * PI.toFloat()
+            val dist = thiefRadius * (3f + 2f * rnd.nextFloat())
+            lx = brain.x + cos(ang) * dist; ly = brain.y + sin(ang) * dist
+        } else {
+            lx = arenaW * (0.2f + 0.6f * rnd.nextFloat())
+            ly = arenaH * (0.3f + 0.4f * rnd.nextFloat())
+        }
         if (brain.beginHeist(lx, ly, loot.kind)) {
             currentLoot = loot
             listener?.onLootMessage(GameMessage.HEIST_START, loot.name)
@@ -209,7 +226,7 @@ class GameEngine(
     }
 
     // ---------- وضع البحث ----------
-    private fun seekAvailable() = settings.seekEnabled && seekNames.isNotEmpty()
+    private fun seekAvailable() = settings.seekEnabled && seekNames.isNotEmpty() && !compact
 
     private fun maybeStartSeek() {
         if (!seekAvailable()) return
@@ -270,6 +287,10 @@ class GameEngine(
         jailT = t.coerceIn(0f, (arenaH - jailH).coerceAtLeast(0f))
         if (brain.state == ThiefState.JAILED) { brain.x = jailCenterX(); brain.y = jailCenterY() }
     }
+
+    /** تحريك السجن من نافذة السجن العائمة (إحداثيات الشاشة). */
+    fun dragJailTo(l: Float, t: Float) = moveJailTo(l, t)
+    fun commitJailPosition() = saveJailPosition()
 
     private fun saveJailPosition() {
         val rw = arenaW - jailW; val rh = arenaH - jailH

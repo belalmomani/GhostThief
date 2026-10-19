@@ -13,33 +13,48 @@ import com.ghostthief.game.logic.LootKind
 import com.ghostthief.game.logic.LootRules
 import com.ghostthief.game.logic.ThiefState
 import kotlin.math.PI
+import kotlin.math.hypot
 import kotlin.math.sin
 import kotlin.random.Random
 
 /**
- * عرض اللعبة. الخلفية شفافة تماماً (لا نرسم أي خلفية) فتظهر خلفية الشاشة أو التطبيق الآخر خلفه.
- * يُستخدم في GameActivity وفي نافذة الوضع العائم.
+ * عرض اللعبة. الخلفية شفافة تماماً (لا نرسم أي خلفية).
+ * FULL: داخل التطبيق (ساحة = حجم العرض).
+ * ACTOR: نافذة عائمة صغيرة تتبع الحرامي (الساحة = الشاشة كلها).
+ * JAIL: نافذة عائمة صغيرة للسجن (قابلة للسحب) مع زر إغلاق ✕ ملاصق له.
  */
 class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? = null) :
     View(context, attrs), Choreographer.FrameCallback, GameListener {
 
+    enum class Role { FULL, ACTOR, JAIL }
+    var role = Role.FULL
+
     var engine: GameEngine? = null
-        set(value) { field = value; value?.listener = this; sizeEngine() }
-    /** وضع النافذة العائمة: نرسم زر إغلاق ولا نرسم أي شيء خارج الساحة. */
-    var arenaMode = false
+        set(value) {
+            field = value
+            if (role != Role.JAIL) value?.listener = this
+            if (role == Role.FULL) sizeEngine()
+        }
+
+    /** موضع النافذة على الشاشة (للأدوار العائمة). */
+    var originX = 0f
+    var originY = 0f
+    var onFrame: (() -> Unit)? = null
+    var onToast: ((String) -> Unit)? = null
     var onCloseRequested: (() -> Unit)? = null
-    /** يُستدعى عند سحب مقبض تحريك النافذة العائمة (فرق الإحداثيات بالبكسل). */
-    var onWindowDrag: ((Float, Float) -> Unit)? = null
-    private var draggingWindow = false
-    private var lastRawX = 0f
-    private var lastRawY = 0f
+    var onJailDrag: ((Float, Float) -> Unit)? = null
+    var onJailDragEnd: (() -> Unit)? = null
 
     private val density = resources.displayMetrics.density
+    val jailPad: Float get() = 10f * density
     private var sprites: Sprites? = null
     private var fx: SoundFx? = null
     private var running = false
     private var lastInvalidate = 0L
     private var touching = false
+    private var jailDragging = false
+    private var lastRawX = 0f
+    private var lastRawY = 0f
 
     private val p = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER; typeface = Typeface.DEFAULT_BOLD }
@@ -50,12 +65,11 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
     private var msgText: String? = null
     private var msgLife = 0f
     private val rnd = Random(System.nanoTime())
-    private val closeR get() = 16f * density
 
     fun start() {
         if (running) return
         if (sprites == null) sprites = Sprites(context)
-        if (fx == null) engine?.let { fx = SoundFx(context, it.settings) }
+        if (fx == null && role != Role.JAIL) engine?.let { fx = SoundFx(context, it.settings) }
         running = true
         engine?.lastTickMs = 0L
         engine?.paused = false
@@ -79,7 +93,9 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
         if (visibility == VISIBLE && isAttachedToWindow) start() else if (visibility != VISIBLE) pause()
     }
     override fun onSizeChanged(w: Int, h: Int, ow: Int, oh: Int) { super.onSizeChanged(w, h, ow, oh); sizeEngine() }
-    private fun sizeEngine() { if (width > 0 && height > 0) engine?.setArena(width.toFloat(), height.toFloat(), density) }
+    private fun sizeEngine() {
+        if (role == Role.FULL && width > 0 && height > 0) engine?.setArena(width.toFloat(), height.toFloat(), density)
+    }
 
     override fun doFrame(frameTimeNanos: Long) {
         if (!running) return
@@ -88,8 +104,11 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
             val nowMs = frameTimeNanos / 1_000_000L
             e.tick(nowMs)
             updateEffects(0.016f)
-            // 30 إطاراً/ثانية عند الخمول، و60 أثناء اللمس
-            if (touching || nowMs - lastInvalidate >= 32) { lastInvalidate = nowMs; invalidate() }
+            onFrame?.invoke()
+            val st = e.brain.state
+            val animating = st == ThiefState.CAUGHT || st == ThiefState.ESCAPING
+            val interval = if (role == Role.JAIL && !animating) 500L else 32L
+            if (touching || nowMs - lastInvalidate >= interval) { lastInvalidate = nowMs; invalidate() }
         }
         Choreographer.getInstance().postFrameCallback(this)
     }
@@ -105,6 +124,12 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
     }
 
     // ---- GameListener ----
+    private fun show(text: String) {
+        post {
+            if (role == Role.ACTOR) onToast?.invoke(text) else { msgText = text; msgLife = 2.6f }
+        }
+    }
+
     override fun onMessage(msg: GameMessage, points: Int) {
         val e = engine ?: return
         val text = when (msg) {
@@ -122,8 +147,8 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
             GameMessage.STASHED, GameMessage.DROPPED_LOOT -> ""
         }
         if (text.isEmpty()) return
+        show(text)
         post {
-            msgText = text; msgLife = 2.4f
             if (e.settings.effectsEnabled) when (msg) {
                 GameMessage.CAUGHT, GameMessage.CAUGHT_BONUS -> burst(e.jailCenterX(), e.jailCenterY(), true)
                 GameMessage.CIRCLE_FAILED, GameMessage.TRY_AGAIN -> burst(e.brain.x, e.brain.y, false)
@@ -145,10 +170,8 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
             GameMessage.DROPPED_LOOT -> context.getString(R.string.msg_dropped, name, points)
             else -> return
         }
-        post {
-            msgText = text; msgLife = 2.6f
-            if (e.settings.effectsEnabled && (msg == GameMessage.RESCUED || msg == GameMessage.DROPPED_LOOT)) burst(e.brain.x, e.brain.y, true)
-        }
+        show(text)
+        post { if (e.settings.effectsEnabled && (msg == GameMessage.RESCUED || msg == GameMessage.DROPPED_LOOT)) burst(e.brain.x, e.brain.y, true) }
     }
 
     override fun onSound(effect: SoundEffect) { fx?.play(effect) }
@@ -167,19 +190,44 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
     override fun onDraw(c: Canvas) {
         val e = engine ?: return
         val sp = sprites ?: return
-        drawJail(c, e, sp)
-        drawLootBefore(c, e)
-        drawThief(c, e, sp)
-        drawLootCarried(c, e)
-        drawTrail(c, e)
+        when (role) {
+            Role.FULL -> {
+                drawJail(c, e, sp)
+                drawLootBefore(c, e)
+                drawThief(c, e, sp)
+                drawLootCarried(c, e)
+                drawTrail(c, e)
+                drawParticles(c)
+                drawMessage(c)
+            }
+            Role.ACTOR -> {
+                c.save(); c.translate(-originX, -originY)
+                drawLootBefore(c, e)
+                drawThief(c, e, sp)
+                drawLootCarried(c, e)
+                drawTrail(c, e)
+                drawParticles(c)
+                c.restore()
+            }
+            Role.JAIL -> {
+                c.save(); c.translate(-originX, -originY)
+                drawJail(c, e, sp)
+                c.restore()
+                drawChip(c, e)
+            }
+        }
+    }
+
+    private fun drawParticles(c: Canvas) {
         for (q in particles) {
             p.color = q.color; p.alpha = (255 * (q.life.coerceIn(0f, 1f))).toInt()
             c.drawCircle(q.x, q.y, q.size, p)
         }
         p.alpha = 255
-        drawMessage(c)
-        if (arenaMode) { drawClose(c); drawGrip(c) }
     }
+
+    private fun thiefRadius() = engine?.thiefRadius ?: 60f
+    private fun engineThiefHeight() = thiefRadius() * 2.3f
 
     private fun drawSprite(c: Canvas, b: Bitmap, cx: Float, cy: Float, scale: Float, flip: Boolean, alpha: Float) {
         val s = (sprites?.refHeight ?: 305f).let { (engineThiefHeight() / it) * scale }
@@ -191,8 +239,6 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
         c.restore()
         p.alpha = 255
     }
-
-    private fun engineThiefHeight() = (engine?.thiefRadius ?: 60f) * 2.3f
 
     private fun drawThief(c: Canvas, e: GameEngine, sp: Sprites) {
         val b = e.brain
@@ -206,8 +252,7 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
                 drawSprite(c, sp.run[(b.runClock * 6f).toInt() % 4], x + shake, y, b.scale, flip, 1f)
             }
             ThiefState.ESCAPING -> drawSprite(c, sp.run[(b.stateTime * 12f).toInt() % 4], x, y, b.scale, flip, 1f)
-            ThiefState.STAND -> drawSprite(c, sp.stand, x, y + bob(b.stateTime), 1f, flip, 1f)
-            ThiefState.LOOK -> drawSprite(c, sp.stand, x, y + bob(b.stateTime), 1f, flip, 1f)
+            ThiefState.STAND, ThiefState.LOOK -> drawSprite(c, sp.stand, x, y + bob(b.stateTime), 1f, flip, 1f)
             ThiefState.SURPRISED -> {
                 drawSprite(c, sp.stand, x, y, 1f, flip, 1f)
                 p.color = Color.parseColor("#1E88E5"); p.strokeWidth = 4f * density; p.style = Paint.Style.STROKE
@@ -227,6 +272,17 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
             ThiefState.CAUGHT -> drawSprite(c, sp.caught, x, y, b.scale, false, 1f)
             ThiefState.JAILED -> {}
         }
+    }
+
+    private fun bob(t: Float) = (sin(t * 6f) * 2f * density)
+
+    private fun drawFolder(c: Canvas, sp: Sprites, x: Float, y: Float, variant: Int, a: Float) {
+        val fb = sp.folders[variant % sp.folders.size]
+        val s = engineThiefHeight() * 0.85f / fb.height
+        p.alpha = (a.coerceIn(0f, 1f) * 255).toInt()
+        c.save(); c.translate(x, y); c.scale(s, s)
+        c.drawBitmap(fb, -fb.width / 2f, -fb.height / 2f, p)
+        c.restore(); p.alpha = 255
     }
 
     /** مجلدات فارغة مرسومة برمجياً بأسماء من مجلد المستخدم؛ الحرامي في أحدها. */
@@ -249,29 +305,53 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
         p.alpha = 255
     }
 
+    // ---- الغنائم: الشكل الحقيقي للتطبيق، وأيقونات الملفات بحسب نوعها ----
     private fun lootColor(k: LootKind) = when (k) {
         LootKind.SMALL -> Color.rgb(67, 160, 71)
         LootKind.MEDIUM -> Color.rgb(251, 140, 0)
         LootKind.LARGE -> Color.rgb(229, 57, 53)
     }
 
-    /** بطاقة غنيمة: أيقونة التطبيق (أو رمز ملف) + الاسم + الحجم. */
+    private fun fileColor(ext: String): Int = when (ext) {
+        "PDF" -> 0xFFE53935.toInt()
+        "DOC", "DOCX", "TXT" -> 0xFF1E88E5.toInt()
+        "XLS", "XLSX", "CSV" -> 0xFF43A047.toInt()
+        "MP4", "MKV", "AVI", "MOV" -> 0xFF8E24AA.toInt()
+        "MP3", "WAV", "M4A", "OGG" -> 0xFFF4511E.toInt()
+        "JPG", "JPEG", "PNG", "GIF", "WEBP" -> 0xFF00ACC1.toInt()
+        "ZIP", "RAR", "7Z" -> 0xFF6D4C41.toInt()
+        "APK" -> 0xFF3DDC84.toInt()
+        else -> 0xFF607D8B.toInt()
+    }
+
+    private fun drawFileIcon(c: Canvas, loot: Loot, r: RectF, a: Int) {
+        val ext = loot.name.substringAfterLast('.', "").uppercase().take(4)
+        val w = r.width() * 0.78f; val h = r.height() * 0.92f
+        val l = r.centerX() - w / 2f; val t = r.centerY() - h / 2f
+        val fold = w * 0.3f
+        val path = Path().apply {
+            moveTo(l, t); lineTo(l + w - fold, t); lineTo(l + w, t + fold); lineTo(l + w, t + h); lineTo(l, t + h); close()
+        }
+        p.style = Paint.Style.FILL; p.color = fileColor(ext); p.alpha = a
+        c.drawPath(path, p)
+        p.color = Color.argb((a * 0.55f).toInt(), 255, 255, 255)
+        c.drawPath(Path().apply { moveTo(l + w - fold, t); lineTo(l + w, t + fold); lineTo(l + w - fold, t + fold); close() }, p)
+        textPaint.textSize = r.height() * 0.26f; textPaint.color = Color.argb(a, 255, 255, 255)
+        c.drawText(if (ext.isEmpty()) "FILE" else ext, r.centerX(), r.centerY() + h * 0.18f, textPaint)
+        p.alpha = 255
+    }
+
     private fun drawLootCard(c: Canvas, loot: Loot, cx: Float, cy: Float, scale: Float, alpha: Float) {
         val side = thiefRadius() * 1.25f * scale
         val a = (alpha.coerceIn(0f, 1f) * 255).toInt()
-        p.style = Paint.Style.FILL; p.color = Color.argb((a * 0.92f).toInt(), 255, 255, 255)
-        c.drawRoundRect(cx - side / 2f, cy - side / 2f, cx + side / 2f, cy + side / 2f, 8f * density, 8f * density, p)
-        p.style = Paint.Style.STROKE; p.strokeWidth = 3f * density; p.color = lootColor(loot.kind); p.alpha = a
-        c.drawRoundRect(cx - side / 2f, cy - side / 2f, cx + side / 2f, cy + side / 2f, 8f * density, 8f * density, p)
-        p.style = Paint.Style.FILL; p.alpha = 255
+        val r = RectF(cx - side / 2f, cy - side / 2f, cx + side / 2f, cy + side / 2f)
         val icon = LootCatalog.icons[loot.name]
-        if (icon != null) {
-            val r = RectF(cx - side * 0.36f, cy - side * 0.36f, cx + side * 0.36f, cy + side * 0.36f)
+        if (icon != null) { // أيقونة التطبيق الحقيقية
             p.alpha = a; c.drawBitmap(icon, null, r, p); p.alpha = 255
-        } else {
-            textPaint.textSize = side * 0.55f; textPaint.color = Color.argb(a, 60, 60, 60)
-            c.drawText(if (loot.isApp) "📦" else "📄", cx, cy + side * 0.2f, textPaint)
-        }
+        } else drawFileIcon(c, loot, r, a)
+        p.style = Paint.Style.STROKE; p.strokeWidth = 2.5f * density; p.color = lootColor(loot.kind); p.alpha = a
+        c.drawRoundRect(r, side * 0.2f, side * 0.2f, p)
+        p.style = Paint.Style.FILL; p.alpha = 255
         textPaint.textSize = 10f * density; textPaint.color = Color.argb(a, 13, 71, 161)
         c.drawText(loot.name + " • " + LootRules.formatSize(loot.sizeBytes), cx, cy + side / 2f + 12f * density, textPaint)
     }
@@ -290,7 +370,7 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
                 c.drawPath(path, trailPaint)
                 trailPaint.color = Color.rgb(188, 143, 110); trailPaint.strokeWidth = 2f * density
                 c.drawPath(path, trailPaint)
-                drawLootCard(c, loot, b.lootX, b.lootY, 1.35f, 1f)
+                drawLootCard(c, loot, b.lootX, b.lootY, 1.15f, 1f)
             }
             else -> {}
         }
@@ -300,21 +380,9 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
     private fun drawLootCarried(c: Canvas, e: GameEngine) {
         val loot = e.currentLoot ?: return
         val b = e.brain
-        if (b.state == ThiefState.CARRY || (b.carrying && b.alpha > 0.05f && b.state != ThiefState.DRAG)) {
-            drawLootCard(c, loot, b.x, b.y - thiefRadius() * 1.75f, 0.7f, b.alpha.coerceAtLeast(0.0f).let { if (b.state == ThiefState.CARRY) 1f else it })
+        if (b.carrying && b.state != ThiefState.DRAG && b.alpha > 0.05f) {
+            drawLootCard(c, loot, b.x, b.y - thiefRadius() * 1.75f, 0.7f, if (b.state == ThiefState.CARRY) 1f else b.alpha)
         }
-    }
-
-    private fun thiefRadius() = engine?.thiefRadius ?: 60f
-    private fun bob(t: Float) = (sin(t * 6f) * 2f * density)
-
-    private fun drawFolder(c: Canvas, sp: Sprites, x: Float, y: Float, variant: Int, a: Float) {
-        val fb = sp.folders[variant % sp.folders.size]
-        val s = engineThiefHeight() * 0.85f / fb.height
-        p.alpha = (a.coerceIn(0f, 1f) * 255).toInt()
-        c.save(); c.translate(x, y); c.scale(s, s)
-        c.drawBitmap(fb, -fb.width / 2f, -fb.height / 2f, p)
-        c.restore(); p.alpha = 255
     }
 
     private fun drawJail(c: Canvas, e: GameEngine, sp: Sprites) {
@@ -322,8 +390,7 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
         val l = e.jailLeft(); val t = e.jailTop(); val w = e.jailW; val h = e.jailH
         val st = e.brain.state
         if (st == ThiefState.JAILED) {
-            val dst = RectF(l, t, l + w, t + h)
-            c.drawBitmap(sp.cageLocked, null, dst, p)
+            c.drawBitmap(sp.cageLocked, null, RectF(l, t, l + w, t + h), p)
             if (e.settings.showJailTimer && e.jail.isJailed) {
                 textPaint.textSize = 13f * density; textPaint.color = Color.WHITE
                 textPaint.setShadowLayer(3f * density, 0f, 0f, Color.BLACK)
@@ -339,7 +406,7 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
         }
     }
 
-    /** سجن فارغ مرسوم برمجياً (شفاف، بقضبان) — استبدله لاحقاً بأصل فني مخصص إن رغبت. */
+    /** سجن فارغ مرسوم برمجياً (شفاف، بقضبان). */
     private fun drawEmptyJail(c: Canvas, l: Float, t: Float, w: Float, h: Float, a: Float) {
         if (a <= 0f) return
         p.style = Paint.Style.FILL; p.color = Color.argb((50 * a).toInt(), 150, 200, 255)
@@ -348,6 +415,18 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
         c.drawRoundRect(l, t, l + w, t + h, 8f * density, 8f * density, p)
         p.strokeWidth = 2.5f * density
         for (i in 1..4) { val bx = l + w * i / 5f; c.drawLine(bx, t + 4f * density, bx, t + h - 4f * density, p) }
+        p.style = Paint.Style.FILL
+    }
+
+    /** زر ✕ ملاصق لزاوية السجن (يغلق الوضع العائم كله). */
+    private fun drawChip(c: Canvas, e: GameEngine) {
+        val cx = e.jailLeft() + e.jailW - originX
+        val cy = e.jailTop() - originY
+        val r = 9f * density
+        p.style = Paint.Style.FILL; p.color = Color.argb(225, 230, 70, 70); c.drawCircle(cx, cy, r, p)
+        p.color = Color.WHITE; p.strokeWidth = 2.2f * density; p.style = Paint.Style.STROKE
+        val d = r * 0.42f
+        c.drawLine(cx - d, cy - d, cx + d, cy + d, p); c.drawLine(cx - d, cy + d, cx + d, cy - d, p)
         p.style = Paint.Style.FILL
     }
 
@@ -377,51 +456,34 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
         textPaint.alpha = 255
     }
 
-    private fun gripRect() = RectF(4f * density, 4f * density, 44f * density, 28f * density)
-
-    /** مقبض تحريك النافذة العائمة. */
-    private fun drawGrip(c: Canvas) {
-        val r = gripRect()
-        p.color = Color.argb(150, 33, 33, 33); c.drawRoundRect(r, 10f * density, 10f * density, p)
-        p.color = Color.WHITE
-        for (i in -1..1) c.drawCircle(r.centerX() + i * 8f * density, r.centerY(), 2.2f * density, p)
-    }
-
-    private fun drawClose(c: Canvas) {
-        val cx = width - closeR - 4f * density; val cy = closeR + 4f * density
-        p.color = Color.argb(200, 230, 70, 70); c.drawCircle(cx, cy, closeR, p)
-        p.color = Color.WHITE; p.strokeWidth = 3f * density; p.style = Paint.Style.STROKE
-        val d = closeR * 0.4f
-        c.drawLine(cx - d, cy - d, cx + d, cy + d, p); c.drawLine(cx - d, cy + d, cx + d, cy - d, p)
-        p.style = Paint.Style.FILL
-    }
-
+    // ---- اللمس ----
     override fun onTouchEvent(ev: MotionEvent): Boolean {
         val e = engine ?: return false
+        if (role == Role.JAIL) return jailTouch(ev, e)
+        // في النافذة العائمة نستخدم إحداثيات الشاشة المطلقة (الساحة = الشاشة)
+        val x = if (role == Role.FULL) ev.x else ev.rawX
+        val y = if (role == Role.FULL) ev.y else ev.rawY
+        when (ev.actionMasked) {
+            MotionEvent.ACTION_DOWN -> { touching = true; e.touchDown(x, y) }
+            MotionEvent.ACTION_MOVE -> e.touchMove(x, y)
+            MotionEvent.ACTION_UP -> { touching = false; e.touchUp(x, y); performClick() }
+            MotionEvent.ACTION_CANCEL -> { touching = false; e.touchCancel() }
+        }
+        return true
+    }
+
+    private fun jailTouch(ev: MotionEvent, e: GameEngine): Boolean {
         when (ev.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
-                if (arenaMode && gripRect().contains(ev.x, ev.y)) {
-                    draggingWindow = true; lastRawX = ev.rawX; lastRawY = ev.rawY; return true
-                }
-                if (arenaMode) {
-                    val cx = width - closeR - 4f * density; val cy = closeR + 4f * density
-                    if (Math.hypot((ev.x - cx).toDouble(), (ev.y - cy).toDouble()) <= closeR * 1.6) {
-                        onCloseRequested?.invoke(); return true
-                    }
-                }
-                touching = true; e.touchDown(ev.x, ev.y)
+                val cx = e.jailLeft() + e.jailW - originX; val cy = e.jailTop() - originY
+                if (hypot((ev.x - cx).toDouble(), (ev.y - cy).toDouble()) <= jailPad * 1.7) { onCloseRequested?.invoke(); return true }
+                jailDragging = true; lastRawX = ev.rawX; lastRawY = ev.rawY
             }
-            MotionEvent.ACTION_MOVE -> {
-                if (draggingWindow) {
-                    onWindowDrag?.invoke(ev.rawX - lastRawX, ev.rawY - lastRawY)
-                    lastRawX = ev.rawX; lastRawY = ev.rawY
-                } else e.touchMove(ev.x, ev.y)
+            MotionEvent.ACTION_MOVE -> if (jailDragging) {
+                onJailDrag?.invoke(ev.rawX - lastRawX, ev.rawY - lastRawY)
+                lastRawX = ev.rawX; lastRawY = ev.rawY
             }
-            MotionEvent.ACTION_UP -> {
-                if (draggingWindow) { draggingWindow = false; return true }
-                touching = false; e.touchUp(ev.x, ev.y); performClick()
-            }
-            MotionEvent.ACTION_CANCEL -> { draggingWindow = false; touching = false; e.touchCancel() }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> if (jailDragging) { jailDragging = false; onJailDragEnd?.invoke() }
         }
         return true
     }

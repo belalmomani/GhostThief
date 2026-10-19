@@ -36,30 +36,46 @@ object LootLoader {
         }.start()
     }
 
-    fun loadFiles(context: Context, treeUri: String?): List<Loot> {
-        if (treeUri.isNullOrBlank()) return emptyList()
+    class ScanResult(val files: List<Loot>, val folders: Int)
+
+    fun loadFiles(context: Context, treeUri: String?): List<Loot> = scan(context, treeUri).files
+
+    /** يفحص المجلد المختار ومجلداته الفرعية حتى مستويين (أسماء وأحجام فقط). */
+    fun scan(context: Context, treeUri: String?): ScanResult {
+        if (treeUri.isNullOrBlank()) return ScanResult(emptyList(), 0)
         val tree = Uri.parse(treeUri)
-        val docId = DocumentsContract.getTreeDocumentId(tree)
-        val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, docId)
         val cols = arrayOf(
+            DocumentsContract.Document.COLUMN_DOCUMENT_ID,
             DocumentsContract.Document.COLUMN_DISPLAY_NAME,
             DocumentsContract.Document.COLUMN_SIZE,
             DocumentsContract.Document.COLUMN_MIME_TYPE
         )
-        val out = ArrayList<Loot>()
+        val files = ArrayList<Loot>()
+        var folders = 0
+        val queue = ArrayDeque<Pair<String, Int>>()
+        queue.add(DocumentsContract.getTreeDocumentId(tree) to 0)
+        var visited = 0
         try {
-            context.contentResolver.query(children, cols, null, null, null)?.use { c ->
-                while (c.moveToNext() && out.size < MAX_SCAN) {
-                    val mime = c.getString(2).orEmpty()
-                    if (mime == DocumentsContract.Document.MIME_TYPE_DIR) continue
-                    val n = c.getString(0)?.trim().orEmpty()
-                    if (n.isEmpty()) continue
-                    val size = if (c.isNull(1)) 0L else c.getLong(1)
-                    out.add(Loot(if (n.length > MAX_NAME) n.take(MAX_NAME - 1) + "…" else n, size, false))
+            while (queue.isNotEmpty() && files.size < MAX_SCAN && visited < 40) {
+                val (docId, depth) = queue.removeFirst(); visited++
+                val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, docId)
+                context.contentResolver.query(children, cols, null, null, null)?.use { c ->
+                    while (c.moveToNext() && files.size < MAX_SCAN) {
+                        val id = c.getString(0).orEmpty()
+                        val n = c.getString(1)?.trim().orEmpty()
+                        val mime = c.getString(3).orEmpty()
+                        if (mime == DocumentsContract.Document.MIME_TYPE_DIR) {
+                            folders++
+                            if (depth < 2) queue.add(id to depth + 1)
+                        } else if (n.isNotEmpty()) {
+                            val size = if (c.isNull(2)) 0L else c.getLong(2)
+                            files.add(Loot(if (n.length > MAX_NAME) n.take(MAX_NAME - 1) + "…" else n, size, false))
+                        }
+                    }
                 }
             }
         } catch (_: SecurityException) { /* الإذن سُحب */ }
-        return out
+        return ScanResult(files, folders)
     }
 
     fun loadApps(context: Context, packagesCsv: String): List<Loot> {

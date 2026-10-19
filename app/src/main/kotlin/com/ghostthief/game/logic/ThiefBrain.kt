@@ -80,6 +80,8 @@ class ThiefBrain(
         private set
     var lootEvent = LootEvent.NONE
         private set
+    /** طول الحبل بالبكسل (يضبطه المحرك نسبةً لحجم الحرامي). */
+    var ropeLength = 110f
     private var stashPending = false
     /** بعد الضربة بالنقر: يهرب ثم يختبئ وهو يتألم. */
     private var hurtHide = false
@@ -220,7 +222,7 @@ class ThiefBrain(
             ThiefState.DRAG -> {
                 // يسحب غنيمة كبيرة بحبل نحو حافة الشاشة بجهد شديد (حركة بطيئة)
                 x += facing * speed() * 0.35f * d
-                val tx = x - facing * ROPE_LENGTH
+                val tx = x - facing * ropeLength
                 lootX += (tx - lootX) * minOf(1f, 8f * d) // الغنيمة تتبع بحبل مشدود
                 lootY += (y - lootY) * minOf(1f, 8f * d)
                 runClock += d * 0.8f
@@ -395,5 +397,4 @@ class ThiefBrain(
 
     fun currentStateDuration() = stateDuration
 
-    companion object { const val ROPE_LENGTH = 110f }
 }

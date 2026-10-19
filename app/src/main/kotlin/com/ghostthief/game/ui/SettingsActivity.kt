@@ -210,10 +210,12 @@ class SettingsActivity : AppCompatActivity() {
     private fun scanFolder() {
         val uri = app.settings.seekFolderUri
         Thread {
-            val files = try { com.ghostthief.game.game.LootLoader.loadFiles(this, uri).sortedByDescending { it.sizeBytes } } catch (t: Throwable) { emptyList() }
+            val res = try { com.ghostthief.game.game.LootLoader.scan(this, uri) } catch (t: Throwable) { com.ghostthief.game.game.LootLoader.ScanResult(emptyList(), 0) }
+            val files = res.files.sortedByDescending { it.sizeBytes }
             runOnUiThread {
                 if (files.isEmpty()) {
-                    AlertDialog.Builder(this).setMessage(R.string.h_scan_empty).setPositiveButton(android.R.string.ok, null).show()
+                    val msg = if (uri.isNullOrBlank()) getString(R.string.h_scan_empty) else getString(R.string.h_scan_none_fmt, res.folders)
+                    AlertDialog.Builder(this).setMessage(msg).setPositiveButton(android.R.string.ok, null).show()
                 } else {
                     val lines = files.take(40).map {
                         val how = when (it.kind) {
@@ -272,7 +274,15 @@ class SettingsActivity : AppCompatActivity() {
         }
         val reason = app.sync.lastError
         cloudStatus.text = getString(R.string.s_cloud_status, st) +
-            if (reason != null && app.sync.currentStatus() == SyncStatus.OFFLINE_PENDING) "\n" + getString(R.string.s_cloud_reason, reason) else ""
+            if (reason != null && app.sync.currentStatus() == SyncStatus.OFFLINE_PENDING) {
+                val hint = when {
+                    reason.contains("administrators only", true) || reason.contains("ADMIN_ONLY", true) ||
+                        reason.contains("OPERATION_NOT_ALLOWED", true) -> "\n" + getString(R.string.s_cloud_hint_anon)
+                    reason.contains("PERMISSION_DENIED", true) || reason.contains("permission", true) -> "\n" + getString(R.string.s_cloud_hint_rules)
+                    else -> ""
+                }
+                "\n" + getString(R.string.s_cloud_reason, reason) + hint
+            } else ""
     }
 
     private fun confirmReset() {

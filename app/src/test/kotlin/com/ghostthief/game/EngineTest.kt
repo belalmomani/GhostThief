@@ -177,4 +177,22 @@ class EngineTest {
         advanceEngine(e, 40f)
         assertNull(e.currentLoot)
     }
+
+    @Test fun compactMode_smallerThief_andLootAppearsNearIt() {
+        val env = Env(); env.settings.heistEnabled = true
+        val e = env.engine(); e.compact = true; e.sizeFactor = 0.65f; e.setArena(1080f, 2000f, 2f)
+        assertTrue(e.thiefRadius < 48f * 2f * 0.7f)
+        e.loots = listOf(com.ghostthief.game.logic.Loot("A", 1L, false))
+        e.brain.x = 500f; e.brain.y = 1000f
+        e.triggerHeist()
+        val d = Math.hypot((e.brain.lootX - 500f).toDouble(), (e.brain.lootY - 1000f).toDouble())
+        assertTrue(d <= e.thiefRadius * 5.1f)
+    }
+
+    @Test fun jailWindowDrag_isSavedAndRestored() {
+        val env = Env(); val e = env.engine()
+        e.dragJailTo(200f, 300f); e.commitJailPosition()
+        assertTrue(env.settings.jailPosX >= 0)
+        assertTrue(Math.abs(env.engine().jailLeft() - 200f) < 2f)
+    }
 }

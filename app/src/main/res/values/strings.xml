@@ -95,9 +95,12 @@
     <string name="h_kind_small">يحملها ويهرب</string>
     <string name="h_kind_medium">يخبّئها</string>
     <string name="h_kind_large">يسحبها بحبل</string>
-    <string name="s_float_size">حجم النافذة العائمة</string>
+    <string name="s_float_size">حجم الحرامي في الوضع العائم</string>
     <string name="float_small">صغير (افتراضي)</string>
     <string name="float_medium">متوسط</string>
     <string name="float_large">كبير</string>
-    <string name="s_float_hint">اسحب المقبض (⋯) أعلى النافذة لتحريكها، و✕ لإغلاقها.</string>
+    <string name="s_float_hint">في الوضع العائم تظهر نافذتان صغيرتان فقط: واحدة تتبع الحرامي وواحدة للسجن (اسحبه لتحريكه، وزر ✕ عليه يغلق الوضع العائم). وضع البحث غير متاح فيه.</string>
+    <string name="s_cloud_hint_anon">الحل: في Firebase Console افتح Authentication ← Sign-in method ← فعّل «Anonymous» ثم اضغط «زامن الآن».</string>
+    <string name="s_cloud_hint_rules">الحل: أنشئ قاعدة Firestore وانشر ملف firestore.rules من المشروع.</string>
+    <string name="h_scan_none_fmt">لم نجد ملفات داخل المجلد (وجدنا %1$d مجلداً فرعياً). اختر مجلداً يحتوي ملفات.</string>
 </resources>
