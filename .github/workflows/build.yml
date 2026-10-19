@@ -57,7 +57,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: GhostThief-NOADS-apk
+          name: GhostThief-NOADS-v${{ github.run_number }}
           path: app/build/outputs/apk/noads/debug/*.apk
           if-no-files-found: error
 
@@ -72,7 +72,7 @@ jobs:
         if: env.KEYSTORE_PATH != ''
         uses: actions/upload-artifact@v4
         with:
-          name: GhostThief-NOADS-release-signed
+          name: GhostThief-NOADS-release-v${{ github.run_number }}
           path: |
             app/build/outputs/apk/noads/release/*.apk
             app/build/outputs/bundle/noadsRelease/*.aab
@@ -102,6 +102,6 @@ jobs:
       - run: gradle --no-daemon assembleAdsDebug
       - uses: actions/upload-artifact@v4
         with:
-          name: GhostThief-WITH-ADS-apk
+          name: GhostThief-WITH-ADS-v${{ github.run_number }}
           path: app/build/outputs/apk/ads/debug/*.apk
           if-no-files-found: ignore

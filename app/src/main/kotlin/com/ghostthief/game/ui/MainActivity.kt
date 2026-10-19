@@ -34,6 +34,7 @@ class MainActivity : BaseActivity() {
         setContentView(R.layout.activity_main)
         app = GhostThiefApp.of(this)
         controller = FloatingModeController(AndroidOverlayEnvironment(this), app.settings)
+        findViewById<TextView>(R.id.tvVersion).text = "v${com.ghostthief.game.BuildConfig.VERSION_NAME} (${com.ghostthief.game.BuildConfig.VERSION_CODE})"
         swFloating = findViewById(R.id.swFloating)
         swJail = findViewById(R.id.swJail)
 
@@ -128,6 +129,9 @@ class MainActivity : BaseActivity() {
             .setTitle(R.string.kid_mode)
             .setMessage(R.string.kid_info_msg)
             .setPositiveButton(R.string.kid_start) { _, _ -> startActivity(GameActivity.intent(this, kid = true)) }
+            .setNeutralButton(R.string.kid_open_settings) { _, _ ->
+                try { startActivity(Intent(android.provider.Settings.ACTION_SECURITY_SETTINGS)) } catch (_: Throwable) {}
+            }
             .setNegativeButton(R.string.cancel, null)
             .show()
     }

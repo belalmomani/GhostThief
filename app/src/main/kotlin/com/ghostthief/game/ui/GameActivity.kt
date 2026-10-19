@@ -49,8 +49,11 @@ class GameActivity : BaseActivity() {
         }
     }
 
+    private var pinRequested = false
+
     override fun onResume() {
         super.onResume()
+        if (kid && !pinRequested) { pinRequested = true; pinScreen() }
         engine.applySettings()
         if (app.settings.seekEnabled) {
             com.ghostthief.game.game.HideSpots.loadAsync(this, app.settings.seekFolderUri) { names -> engine.seekNames = names }
@@ -73,7 +76,7 @@ class GameActivity : BaseActivity() {
     /** الخروج هو نقطة الانتقال الطبيعية الوحيدة التي قد يظهر عندها إعلان بيني. */
     private fun leave() {
         if (kid) { // الخروج من وضع الطفل يحتاج رمز الأهل
-            PinDialogs.ask(this, app.parentLock) { finish() }
+            PinDialogs.ask(this, app.parentLock) { unpinScreen(); finish() }
             return
         }
         app.ads.maybeShowInterstitial(this, engine.isBusy()) { if (!isFinishing) finish() }
@@ -89,6 +92,10 @@ class GameActivity : BaseActivity() {
         }
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
+
+    /** تثبيت الشاشة: يعطّل أزرار الرئيسية والتطبيقات الأخيرة حتى يُلغى التثبيت (Android يطلب موافقة المستخدم). */
+    private fun pinScreen() { try { startLockTask() } catch (_: Throwable) {} }
+    private fun unpinScreen() { try { stopLockTask() } catch (_: Throwable) {} }
 
     companion object {
         private const val EXTRA_KID = "kid"

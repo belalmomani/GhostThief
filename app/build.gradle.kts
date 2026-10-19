@@ -17,6 +17,9 @@ val runNumber = (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toIntOrNull() ?: 1
 val keystorePath: String? = System.getenv("KEYSTORE_PATH")
 val hasKeystore = !keystorePath.isNullOrBlank() && file(keystorePath).exists()
 
+// اسم ملف الـ APK يحمل رقم الإصدار: GhostThief-v0.3.<رقم البناء>-...
+base { archivesName.set("GhostThief-v0.3.$runNumber") }
+
 android {
     namespace = "com.ghostthief.game"
     compileSdk = 36
