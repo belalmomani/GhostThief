@@ -34,6 +34,14 @@ class GameActivity : BaseActivity() {
         gameView.engine = engine
 
         findViewById<MaterialButton>(R.id.btnBack).setOnClickListener { leave() }
+        val btnPolice = findViewById<MaterialButton>(R.id.btnPolice)
+        fun policeLabel() { btnPolice.text = getString(if (engine.policeMode) R.string.police_toggle_on else R.string.police_toggle) }
+        btnPolice.setOnClickListener {
+            engine.setPoliceMode(!engine.policeMode)
+            policeLabel()
+            if (engine.policeMode) android.widget.Toast.makeText(this, R.string.police_hint, android.widget.Toast.LENGTH_LONG).show()
+        }
+        policeLabel()
         findViewById<MaterialButton>(R.id.btnToggleJail).setOnClickListener {
             app.settings.jailVisible = !app.settings.jailVisible // إخفاء مؤقت لا يلغي حالة القبض
             gameView.invalidate()

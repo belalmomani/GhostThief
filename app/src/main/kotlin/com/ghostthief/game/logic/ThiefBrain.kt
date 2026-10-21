@@ -10,7 +10,9 @@ import kotlin.random.Random
 enum class ThiefState {
     RUN, STAND, LOOK, FADE_OUT, HIDDEN, FADE_IN,
     SURPRISED, FLEE, HELD, CAUGHT, JAILED, ESCAPING,
-    HEIST_GO, CARRY, DRAG
+    HEIST_GO, CARRY, DRAG,
+    /** مكبَّل مع الشرطي (يتحرك مع الشرطي والسيارة). */
+    ARRESTED
 }
 
 /** أحداث السرقة التي يستهلكها المحرك مرة واحدة. */
@@ -57,6 +59,16 @@ class ThiefBrain(
         private set
     /** أثناء محاولة اللف يبطئ الحرامي ليسهل الإمساك به. */
     var slowFactor = 1f
+    /** احتمال الاختباء بعد الركض (يُخفَّض في وضع الشرطي ليسهل اللحاق به). */
+    var hideChance = 0.45f
+    /** الشرطي قريب: الحرامي يهرب منه. */
+    var threatened = false
+        private set
+    private var threatX = 0f
+    private var threatY = 0f
+    fun setThreat(tx: Float, ty: Float) { threatened = true; threatX = tx; threatY = ty }
+    fun clearThreat() { threatened = false }
+
     /** عند true يبقى الحرامي مختبئاً حتى يجده اللاعب (وضع البحث). */
     var holdHidden = false
 
@@ -133,8 +145,14 @@ class ThiefBrain(
         arrivedInJail = false
         when (state) {
             ThiefState.RUN -> {
-                move(d, speed())
-                if (stateTime >= stateDuration) pickNextAfterRun()
+                if (threatened) { // يهرب بعيداً عن الشرطي
+                    val dx = x - threatX; val dy = y - threatY
+                    val dist = hypot(dx, dy).coerceAtLeast(1f)
+                    facing = if (dx >= 0) 1 else -1
+                    dirY = (dy / dist) * 0.8f
+                }
+                move(d, speed() * (if (threatened) 1.35f else 1f))
+                if (stateTime >= stateDuration && !threatened) pickNextAfterRun()
             }
             ThiefState.FLEE -> {
                 move(d, speed() * 2.2f)
@@ -143,11 +161,13 @@ class ThiefBrain(
                 }
             }
             ThiefState.STAND -> {
+                if (threatened) { startRun(); return }
                 if (stateTime >= stateDuration) {
                     if (rnd.nextFloat() < 0.5f) enter(ThiefState.LOOK, 1.4f) else startRun()
                 }
             }
             ThiefState.LOOK -> {
+                if (threatened) { startRun(); return }
                 if (stateTime >= stateDuration / 2f && stateTime - d < stateDuration / 2f) facing = -facing
                 if (stateTime >= stateDuration) startRun()
             }
@@ -214,6 +234,7 @@ class ThiefBrain(
                     startRun()
                 }
             }
+            ThiefState.ARRESTED -> { /* يتحرك مع الشرطي (يضبطه المحرك) */ }
             ThiefState.HEIST_GO -> updateHeistGo(d)
             ThiefState.CARRY -> {
                 move(d, speed() * 1.4f)
@@ -290,9 +311,9 @@ class ThiefBrain(
     private fun pickNextAfterRun() {
         val r = rnd.nextFloat()
         when {
-            r < 0.30f -> { facing = -facing; startRun() }
-            r < 0.55f -> enter(ThiefState.STAND, randomBetween(0.6f, 1.2f))
-            else -> beginHide()
+            r < hideChance -> beginHide()
+            r < hideChance + 0.25f -> { facing = -facing; startRun() }
+            else -> enter(ThiefState.STAND, randomBetween(0.6f, 1.2f))
         }
     }
 
@@ -370,6 +391,30 @@ class ThiefBrain(
         enter(ThiefState.CAUGHT, 0.9f)
         return true
     }
+
+    /** القبض بواسطة الشرطي: يُكبَّل ويتحرك مع الشرطي ثم السيارة. */
+    fun arrest(): Boolean {
+        if (!isCatchable() || state == ThiefState.HELD) return false
+        if (carrying) rescuedKind = lootKind
+        carrying = false; lootKind = null; stashPending = false; hurtHide = false
+        alpha = 1f; hideFolderAlpha = 0f; scale = 1f; threatened = false
+        enter(ThiefState.ARRESTED, Float.MAX_VALUE)
+        return true
+    }
+
+    fun setArrestPose(px: Float, py: Float, sc: Float) { if (state == ThiefState.ARRESTED) { x = px; y = py; scale = sc } }
+
+    /** عند وصول السيارة: يقفز الحرامي من السيارة إلى السجن. */
+    fun deliverToJail(jailX: Float, jailY: Float, jailScaleFactor: Float = 0.45f): Boolean {
+        if (state != ThiefState.ARRESTED) return false
+        startX = x; startY = y; targetX = jailX; targetY = jailY; jailScale = jailScaleFactor
+        alpha = 1f; scale = 1f
+        enter(ThiefState.CAUGHT, 0.9f)
+        return true
+    }
+
+    /** إلغاء القبض (مثلاً عند إطفاء وضع الشرطي). */
+    fun cancelArrest() { if (state == ThiefState.ARRESTED) { scale = 1f; startRun() } }
 
     /** استعادة حالة السجن من التخزين. */
     fun restoreJailed(jailX: Float, jailY: Float, jailScaleFactor: Float = 0.45f) {

@@ -82,6 +82,11 @@ class Settings(private val kv: KeyValueStore) {
         get() = kv.getInt("float_size", 0).coerceIn(0, 2)
         set(v) = kv.put("float_size", v.coerceIn(0, 2))
 
+    /** وضع الشرطي: الطفل يحرّك شرطياً للقبض على الحرامي وتأخذهما سيارة الشرطة إلى السجن. */
+    var policeMode: Boolean
+        get() = kv.getBoolean("police_mode", false)
+        set(v) = kv.put("police_mode", v)
+
     /** هل شاهد المستخدم الدليل التعريفي؟ */
     var onboardingDone: Boolean
         get() = kv.getBoolean("onboarding_done", false)

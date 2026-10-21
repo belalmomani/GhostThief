@@ -143,6 +143,7 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
             GameMessage.FOUND -> context.getString(R.string.msg_found, points)
             GameMessage.NOT_HERE -> context.getString(R.string.msg_not_here)
             GameMessage.OUCH -> context.getString(R.string.msg_ouch)
+            GameMessage.POLICE_ARREST -> context.getString(R.string.msg_police_arrest)
             GameMessage.HEIST_START, GameMessage.RESCUED, GameMessage.ESCAPED_LOOT,
             GameMessage.STASHED, GameMessage.DROPPED_LOOT -> ""
         }
@@ -195,6 +196,7 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
                 drawJail(c, e, sp)
                 drawLootBefore(c, e)
                 drawThief(c, e, sp)
+                drawPolice(c, e, sp)
                 drawLootCarried(c, e)
                 drawTrail(c, e)
                 drawParticles(c)
@@ -271,7 +273,41 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
             ThiefState.HIDDEN -> if (e.seekActive) drawSeekSpots(c, e) else drawFolder(c, sp, b.hideX, b.hideY, b.hideVariant, b.hideFolderAlpha)
             ThiefState.HELD -> drawSprite(c, sp.caught, x, y, 0.8f, false, 1f)
             ThiefState.CAUGHT -> drawSprite(c, sp.caught, x, y, b.scale, false, 1f)
+            ThiefState.ARRESTED -> if (e.squad.thiefVisible) { // مكبَّل بجانب الشرطي
+                drawSprite(c, sp.stand, x, y, b.scale, flip, 1f)
+                textPaint.textSize = 16f * density * b.scale; textPaint.color = Color.WHITE
+                c.drawText("🔒", x, y - thiefRadius() * 1.2f * b.scale, textPaint)
+            }
             ThiefState.JAILED -> {}
+        }
+    }
+
+    // ---- الشرطي وسيارة الشرطة ----
+    private fun drawPolice(c: Canvas, e: GameEngine, sp: Sprites) {
+        if (!e.policeActive) return
+        val sq = e.squad
+        if (sq.carVisible) {
+            val bmp = sp.policeCar
+            val s = sq.carWidth / bmp.width
+            val flip = sq.cfacing < 0
+            c.save(); c.translate(sq.cx, sq.cy); c.scale(if (flip) -s else s, s)
+            c.drawBitmap(bmp, -bmp.width / 2f, -bmp.height / 2f, p)
+            c.restore()
+            // أضواء الطوارئ تومض (أحمر/أزرق)
+            val redOn = ((sq.lightsClock * 5f).toInt() % 2) == 0
+            val lx = (if (redOn) 199f else 245f) - bmp.width / 2f
+            val ly = 30f - bmp.height / 2f
+            val gx = sq.cx + (if (flip) -lx else lx) * s
+            val gy = sq.cy + ly * s
+            val col = if (redOn) Color.rgb(255, 60, 60) else Color.rgb(60, 110, 255)
+            for ((r, a) in listOf(26f to 50, 16f to 90, 8f to 200)) {
+                p.color = col; p.alpha = a; c.drawCircle(gx, gy, r * s * 2.2f, p)
+            }
+            p.alpha = 255
+        }
+        if (sq.officerVisible) {
+            val frame = if (sq.moving) sp.policeWalk[(sq.walkClock * 9f).toInt() % 4] else sp.policeStand
+            drawSprite(c, frame, sq.ox, sq.oy, sq.officerScale, sq.ofacing < 0, 1f)
         }
     }
 

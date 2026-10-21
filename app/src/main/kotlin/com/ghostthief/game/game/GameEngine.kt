@@ -10,7 +10,7 @@ import kotlin.math.sin
 import kotlin.math.min
 import kotlin.random.Random
 
-enum class GameMessage { CAUGHT, CAUGHT_BONUS, ACHIEVEMENT, CIRCLE_FAILED, ESCAPED, TRY_AGAIN, SEEK_START, FOUND, NOT_HERE, OUCH, HEIST_START, RESCUED, ESCAPED_LOOT, STASHED, DROPPED_LOOT }
+enum class GameMessage { CAUGHT, CAUGHT_BONUS, ACHIEVEMENT, CIRCLE_FAILED, ESCAPED, TRY_AGAIN, SEEK_START, FOUND, NOT_HERE, OUCH, POLICE_ARREST, HEIST_START, RESCUED, ESCAPED_LOOT, STASHED, DROPPED_LOOT }
 
 interface GameListener {
     fun onMessage(msg: GameMessage, points: Int = 0)
@@ -19,7 +19,7 @@ interface GameListener {
     fun onLootMessage(msg: GameMessage, name: String, points: Int = 0) {}
 }
 
-enum class SoundEffect { POP, CATCH, FAIL, ESCAPE, OUCH, CLANG, DING }
+enum class SoundEffect { POP, CATCH, FAIL, ESCAPE, OUCH, CLANG, DING, SIREN }
 
 /** مكان اختباء في وضع البحث. الاسم يأتي من مجلد اختاره المستخدم (يبقى في الذاكرة فقط). */
 class SeekSpot(val x: Float, val y: Float, val name: String) { var wrong = false }
@@ -84,6 +84,13 @@ class GameEngine(
     var currentLoot: Loot? = null; private set
     private var heistTimer = 8f + rnd.nextFloat() * 8f
 
+    // وضع الشرطي: الطفل يحرّك الشرطي بإصبعه للقبض على الحرامي ثم تأخذهما سيارة الشرطة إلى السجن
+    val squad = PoliceSquad(rnd)
+    var policeMode = false; private set
+    val policeActive: Boolean get() = policeMode && !compact
+    private var policeDown = false
+    private var policePlaced = false
+
     var lastTickMs = 0L
     var paused = false
 
@@ -103,7 +110,17 @@ class GameEngine(
 
     fun applySettings() {
         brain.config.speedScale = settings.speedPercent / 100f
+        policeMode = settings.policeMode
+        brain.hideChance = if (policeActive) 0.2f else 0.45f
         relayoutJail()
+    }
+
+    /** يشغّل/يطفئ وضع الشرطي (ويحفظه في الإعدادات). */
+    fun setPoliceMode(on: Boolean) {
+        settings.policeMode = on
+        policeMode = on
+        brain.hideChance = if (policeActive) 0.2f else 0.45f
+        if (!on) { squad.reset(); brain.clearThreat(); brain.cancelArrest() }
     }
 
     fun setArena(w: Float, h: Float, density: Float) {
@@ -117,6 +134,9 @@ class GameEngine(
         jailMargin = 8f * density
         brain.minY = topInset
         brain.setArena(w, h - bottomInset)
+        squad.carWidth = thiefRadius * 4.2f
+        squad.setArena(w, h - bottomInset, topInset)
+        if (!policePlaced) { squad.place(w * 0.2f, h * 0.7f); policePlaced = true }
         relayoutJail()
         if (brain.state == ThiefState.JAILED) brain.restoreJailed(jailCenterX(), jailCenterY())
     }
@@ -142,7 +162,7 @@ class GameEngine(
 
     fun isJailed() = brain.state == ThiefState.JAILED || brain.state == ThiefState.CAUGHT
     /** مشغول: لا نعرض إعلانات أثناء القبض أو فتح السجن. */
-    fun isBusy() = capture.inProgress || brain.state == ThiefState.CAUGHT || brain.state == ThiefState.ESCAPING || brain.state == ThiefState.HELD || draggingJail
+    fun isBusy() = squad.isBusy() || capture.inProgress || brain.state == ThiefState.CAUGHT || brain.state == ThiefState.ESCAPING || brain.state == ThiefState.HELD || draggingJail
 
     /** يُستدعى من كل إطار. يتجاهل الاستدعاءات المكررة ضمن نفس اللحظة. */
     fun tick(nowMs: Long) {
@@ -171,6 +191,7 @@ class GameEngine(
         }
 
         updateHeist(dt)
+        if (policeActive) updatePolice(dt)
 
         if (brain.state == ThiefState.JAILED) { brain.x = jailCenterX(); brain.y = jailCenterY() }
         if (brain.arrivedInJail) {
@@ -184,6 +205,50 @@ class GameEngine(
             listener?.onMessage(GameMessage.ESCAPED)
             listener?.onSound(SoundEffect.ESCAPE)
         }
+    }
+
+    // ---------- وضع الشرطي ----------
+    private fun carDestination(): Pair<Float, Float> {
+        val side = if (jailCenterX() < arenaW / 2f) 1 else -1
+        val dx = (jailCenterX() + side * (jailW / 2f + squad.carWidth * 0.55f)).coerceIn(squad.carWidth / 2f, (arenaW - squad.carWidth / 2f).coerceAtLeast(squad.carWidth / 2f))
+        val dy = (jailT + jailH - squad.carWidth * 0.12f).coerceIn(topInset + squad.carWidth * 0.3f, (arenaH - bottomInset - squad.carWidth * 0.2f).coerceAtLeast(topInset + squad.carWidth * 0.3f))
+        return dx to dy
+    }
+
+    private fun updatePolice(dt: Float) {
+        squad.update(dt)
+        val patrol = squad.stage == PoliceStage.PATROL
+        val near = hypot(squad.ox - brain.x, squad.oy - brain.y)
+        // الحرامي يهرب من الشرطي إذا اقترب
+        if (patrol && near < thiefRadius * 5f && brain.alpha > 0.5f) brain.setThreat(squad.ox, squad.oy) else brain.clearThreat()
+        // اللمس = قبض
+        if (patrol && brain.alpha > 0.5f && brain.isCatchable() && brain.state != ThiefState.HELD &&
+            near < thiefRadius * 1.3f && !isJailed()) startArrest()
+        if (brain.state == ThiefState.ARRESTED) brain.setArrestPose(squad.thiefX, squad.thiefY, squad.thiefScale)
+        if (squad.takeDropped()) beginCapture(CaptureSource.POLICE)
+    }
+
+    private fun startArrest() {
+        if (!brain.arrest()) return
+        awardRescue()
+        val (dx, dy) = carDestination()
+        squad.arrest(brain.x, brain.y, dx, dy)
+        listener?.onMessage(GameMessage.POLICE_ARREST)
+        listener?.onSound(SoundEffect.SIREN)
+    }
+
+    private fun awardRescue() {
+        val rescued = brain.takeRescued()
+        val loot = currentLoot
+        if (rescued != null && loot != null) {
+            val bonus = LootRules.rescueBonus(rescued)
+            progress.awardPoints(bonus)
+            listener?.onLootMessage(GameMessage.RESCUED, loot.name, bonus)
+            listener?.onSound(SoundEffect.DING)
+            unlock(Achievement.FIRST_RESCUE)
+            if (rescued == LootKind.LARGE) unlock(Achievement.LARGE_RESCUE)
+        }
+        if (brain.lootKind == null) currentLoot = null
     }
 
     // ---------- السرقة التمثيلية ----------
@@ -319,6 +384,9 @@ class GameEngine(
             dragDX = x - jailL; dragDY = y - jailT
             return
         }
+        if (policeActive) { // الإصبع يحرّك الشرطي
+            policeDown = true; pointerDown = true; squad.moveTo(x, y); return
+        }
         if (isJailed()) return
         pointerDown = true
         path.clear(); path.add(PathPoint(x, y))
@@ -330,6 +398,7 @@ class GameEngine(
     fun touchMove(x: Float, y: Float) {
         if (!pointerDown) return
         if (draggingJail) { moveJailTo(x - dragDX, y - dragDY); return }
+        if (policeDown) { squad.moveTo(x, y); return }
         val last = path.lastOrNull()
         if (last != null) {
             val seg = hypot(x - last.x, y - last.y)
@@ -354,6 +423,7 @@ class GameEngine(
         if (!pointerDown) return
         pointerDown = false
         if (draggingJail) { draggingJail = false; saveJailPosition(); return }
+        if (policeDown) { policeDown = false; return }
         brain.slowFactor = 1f
         when {
             brain.state == ThiefState.HELD -> {
@@ -379,6 +449,7 @@ class GameEngine(
 
     fun touchCancel() {
         if (draggingJail) { draggingJail = false; saveJailPosition() }
+        policeDown = false
         pointerDown = false; brain.slowFactor = 1f
         if (brain.state == ThiefState.HELD) brain.releaseHeld()
         path.clear(); threadProgress = 0f
@@ -387,20 +458,12 @@ class GameEngine(
     /** يبدأ القبض مرة واحدة فقط ويسجّل النقاط فوراً. */
     fun beginCapture(source: CaptureSource): Boolean {
         if (!capture.tryBegin(source)) return false
-        if (!brain.capture(jailCenterX(), jailCenterY())) { capture.finish(); return false }
+        val ok = if (source == CaptureSource.POLICE) brain.deliverToJail(jailCenterX(), jailCenterY())
+                 else brain.capture(jailCenterX(), jailCenterY())
+        if (!ok) { capture.finish(); return false }
         jail.start(settings.jailMinutes * 60_000L)
         progress.jailEndAt = jail.endAtMillis
-        val rescued = brain.takeRescued()
-        val loot = currentLoot
-        if (rescued != null && loot != null) {
-            val bonus = LootRules.rescueBonus(rescued)
-            progress.awardPoints(bonus)
-            listener?.onLootMessage(GameMessage.RESCUED, loot.name, bonus)
-            listener?.onSound(SoundEffect.DING)
-            unlock(Achievement.FIRST_RESCUE)
-            if (rescued == LootKind.LARGE) unlock(Achievement.LARGE_RESCUE)
-        }
-        if (brain.lootKind == null) currentLoot = null
+        awardRescue()
         val reward = progress.recordCapture(source == CaptureSource.CIRCLE)
         pointerDown = false; threadProgress = 0f; path.clear()
         listener?.onSound(SoundEffect.CATCH)

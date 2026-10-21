@@ -17,7 +17,8 @@ class OnboardingActivity : BaseActivity() {
     private val pages = listOf(
         Page(R.drawable.thief_caught, R.string.ob_title1, R.string.ob_text1),
         Page(R.drawable.cage_locked, R.string.ob_title2, R.string.ob_text2),
-        Page(R.drawable.folder_yellow, R.string.ob_title3, R.string.ob_text3)
+        Page(R.drawable.folder_yellow, R.string.ob_title3, R.string.ob_text3),
+        Page(R.drawable.police_car, R.string.ob_title4, R.string.ob_text4)
     )
     private var index = 0
     private lateinit var img: ImageView

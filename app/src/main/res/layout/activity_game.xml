@@ -14,6 +14,13 @@
             android:text="@string/back" android:textSize="17sp" />
 
         <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnPolice"
+            style="@style/Widget.Material3.Button.TonalButton"
+            android:layout_width="0dp" android:layout_height="56dp" android:layout_weight="1"
+            android:layout_marginStart="8dp"
+            android:text="@string/police_toggle" android:textSize="17sp" />
+
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/btnToggleJail"
             style="@style/Widget.Material3.Button.TonalButton"
             android:layout_width="0dp" android:layout_height="56dp" android:layout_weight="1"

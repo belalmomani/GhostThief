@@ -26,6 +26,9 @@ class Sprites(context: Context) {
     val poof = load(R.drawable.fx_poof)
     val stars = load(R.drawable.fx_stars)
     val question = load(R.drawable.fx_question)
+    val policeStand = load(R.drawable.police_stand)
+    val policeWalk = listOf(R.drawable.police_walk1, R.drawable.police_walk2, R.drawable.police_walk3, R.drawable.police_walk4).map { load(it) }
+    val policeCar = load(R.drawable.police_car)
 
     /** ارتفاع إطار الركض المرجعي لتوحيد مقياس كل حالات الشخصية. */
     val refHeight: Float get() = run[0].height.toFloat()

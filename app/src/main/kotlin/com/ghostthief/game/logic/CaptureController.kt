@@ -1,6 +1,6 @@
 package com.ghostthief.game.logic
 
-enum class CaptureSource { CIRCLE, LONG_PRESS_DRAG }
+enum class CaptureSource { CIRCLE, LONG_PRESS_DRAG, POLICE }
 
 /** يضمن أن القبض يُسجَّل مرة واحدة فقط حتى لو تداخلت أحداث اللمس. */
 class CaptureController {
