@@ -10,7 +10,7 @@ import kotlin.math.sin
 import kotlin.math.min
 import kotlin.random.Random
 
-enum class GameMessage { CAUGHT, CAUGHT_BONUS, ACHIEVEMENT, CIRCLE_FAILED, ESCAPED, TRY_AGAIN, SEEK_START, FOUND, NOT_HERE, OUCH, POLICE_ARREST, HEIST_START, RESCUED, ESCAPED_LOOT, STASHED, DROPPED_LOOT }
+enum class GameMessage { CAUGHT, CAUGHT_BONUS, ACHIEVEMENT, CIRCLE_FAILED, ESCAPED, TRY_AGAIN, SEEK_START, FOUND, NOT_HERE, OUCH, POLICE_ARREST, STOLEN, RECOVERED, HEIST_START, RESCUED, ESCAPED_LOOT, STASHED, DROPPED_LOOT }
 
 interface GameListener {
     fun onMessage(msg: GameMessage, points: Int = 0)
@@ -25,6 +25,16 @@ enum class SoundEffect { POP, CATCH, FAIL, ESCAPE, OUCH, CLANG, DING }
 
 /** أصوات متكررة (حلقات): الصفارة ومحرك السيارة. */
 enum class LoopSound { SIREN, ENGINE }
+
+/** أيقونة «غنيمة» داخل مشهد اللعبة (تمثيلية فقط؛ لا علاقة لها بأيقونات شاشة الهاتف الحقيقية). */
+class SceneIcon(val loot: Loot) {
+    var x = 0f
+    var y = 0f
+    /** true = داخل كيس الحرامي (تختفي من المشهد حتى يُقبض عليه). */
+    var stolen = false
+    /** وميض عند عودتها بعد استعادتها (1 → 0). */
+    var pop = 0f
+}
 
 /** مكان اختباء في وضع البحث. الاسم يأتي من مجلد اختاره المستخدم (يبقى في الذاكرة فقط). */
 class SeekSpot(val x: Float, val y: Float, val name: String) { var wrong = false }
@@ -86,7 +96,11 @@ class GameEngine(
     // السرقة التمثيلية (اختيارية)
     /** الغنائم المتاحة (أسماء وأحجام فقط، في الذاكرة). */
     var loots: List<Loot> = emptyList()
-    var currentLoot: Loot? = null; private set
+        set(v) { field = v; rebuildSceneIcons() }
+    /** أيقونات الغنائم الظاهرة في المشهد (حتى 8). المسروقة منها لا تُرسم حتى يُقبض على الحرامي. */
+    var sceneIcons: List<SceneIcon> = emptyList(); private set
+    var targetIcon: SceneIcon? = null; private set
+    val stolenCount: Int get() = sceneIcons.count { it.stolen }
     private var heistTimer = 8f + rnd.nextFloat() * 8f
 
     // وضع الشرطي: الطفل يحرّك الشرطي بإصبعه للقبض على الحرامي ثم تأخذهما سيارة الشرطة إلى السجن
@@ -143,6 +157,7 @@ class GameEngine(
         squad.setArena(w, h - bottomInset, topInset)
         if (!policePlaced) { squad.place(w * 0.2f, h * 0.7f); policePlaced = true }
         relayoutJail()
+        layoutSceneIcons()
         if (brain.state == ThiefState.JAILED) brain.restoreJailed(jailCenterX(), jailCenterY())
     }
 
@@ -267,67 +282,86 @@ class GameEngine(
 
     private fun startArrest() {
         if (!brain.arrest()) return
-        awardRescue()
+        recoverStolen()
         val (dx, dy) = carDestination()
         squad.arrest(brain.x, brain.y, dx, dy)
         listener?.onMessage(GameMessage.POLICE_ARREST)
     }
 
-    private fun awardRescue() {
-        val rescued = brain.takeRescued()
-        val loot = currentLoot
-        if (rescued != null && loot != null) {
-            val bonus = LootRules.rescueBonus(rescued)
-            progress.awardPoints(bonus)
-            listener?.onLootMessage(GameMessage.RESCUED, loot.name, bonus)
-            listener?.onSound(SoundEffect.DING)
-            unlock(Achievement.FIRST_RESCUE)
-            if (rescued == LootKind.LARGE) unlock(Achievement.LARGE_RESCUE)
-        }
-        if (brain.lootKind == null) currentLoot = null
+    // ---------- الغنائم التمثيلية: أيقونات في المشهد يسرقها الحرامي ----------
+    private fun rebuildSceneIcons() {
+        targetIcon = null
+        if (compact || loots.isEmpty()) { sceneIcons = emptyList(); return }
+        sceneIcons = loots.shuffled(rnd).take(MAX_SCENE_ICONS).map { SceneIcon(it) }
+        layoutSceneIcons()
     }
 
-    // ---------- السرقة التمثيلية ----------
+    /** يوزّع الأيقونات على شبكة بعيداً عن السجن. */
+    private fun layoutSceneIcons() {
+        if (sceneIcons.isEmpty()) return
+        val m = thiefRadius * 1.1f
+        val cols = floatArrayOf(0.15f, 0.38f, 0.62f, 0.85f)
+        val rows = floatArrayOf(0.20f, 0.33f, 0.46f, 0.59f)
+        val h = arenaH - topInset - bottomInset
+        val slots = ArrayList<Pair<Float, Float>>()
+        for (ry in rows) for (cx in cols) {
+            val x = arenaW * cx; val y = topInset + h * ry
+            val overlapsJail = settings.jailVisible && x + m > jailL && x - m < jailL + jailW && y + m > jailT && y - m < jailT + jailH
+            if (!overlapsJail) slots.add(x to y)
+        }
+        sceneIcons.forEachIndexed { i, ic ->
+            val sl = slots.getOrNull(i) ?: (arenaW * 0.5f to topInset + h * 0.4f)
+            ic.x = sl.first; ic.y = sl.second
+        }
+    }
+
+    /** استعادة كل المسروقات عند القبض على الحرامي (بالإمساك اليدوي أو بالشرطي). */
+    private fun recoverStolen() {
+        val taken = sceneIcons.filter { it.stolen }
+        if (taken.isEmpty()) return
+        var total = 0; var large = false
+        for (ic in taken) {
+            ic.stolen = false; ic.pop = 1f
+            total += LootRules.rescueBonus(ic.loot.kind)
+            if (ic.loot.kind == LootKind.LARGE) large = true
+        }
+        progress.awardPoints(total)
+        listener?.onMessage(GameMessage.RECOVERED, total)
+        listener?.onSound(SoundEffect.DING)
+        unlock(Achievement.FIRST_RESCUE)
+        if (large) unlock(Achievement.LARGE_RESCUE)
+    }
+
     private fun updateHeist(dt: Float) {
-        if (settings.heistEnabled && loots.isNotEmpty() && currentLoot == null &&
+        for (ic in sceneIcons) if (ic.pop > 0f) ic.pop = maxOf(0f, ic.pop - dt * 1.5f)
+        if (settings.heistEnabled && !compact && targetIcon == null && sceneIcons.any { !it.stolen } &&
             brain.state == ThiefState.RUN && !seekActive && !isJailed()) {
             heistTimer -= dt
             if (heistTimer <= 0f) startHeist()
         }
         val ev = brain.takeLootEvent()
-        val loot = currentLoot
-        if (loot != null) {
-            when (ev) {
-                LootEvent.PICKED -> {}
-                LootEvent.ESCAPED_WITH -> listener?.onLootMessage(GameMessage.ESCAPED_LOOT, loot.name)
-                LootEvent.STASHED -> listener?.onLootMessage(GameMessage.STASHED, loot.name)
-                LootEvent.DROPPED -> {
-                    progress.awardPoints(LootRules.DROP_BONUS)
-                    listener?.onLootMessage(GameMessage.DROPPED_LOOT, loot.name, LootRules.DROP_BONUS)
-                }
-                LootEvent.NONE -> {}
+        val ic = targetIcon ?: return
+        when (ev) {
+            LootEvent.STOLEN -> { // اختفت الأيقونة: صارت في الكيس
+                ic.stolen = true; targetIcon = null
+                heistTimer = 12f + rnd.nextFloat() * 14f
+                listener?.onLootMessage(GameMessage.STOLEN, ic.loot.name)
             }
-            if (brain.lootKind == null) { currentLoot = null; heistTimer = 12f + rnd.nextFloat() * 14f }
+            LootEvent.ABORTED -> { targetIcon = null; heistTimer = 8f + rnd.nextFloat() * 8f }
+            LootEvent.NONE -> {}
         }
     }
 
-    /** للاختبار/التشغيل اليدوي: يبدأ سرقة الآن. */
+    /** للاختبار/التشغيل اليدوي: يبدأ سرقة أيقونة الآن. */
     fun triggerHeist() = startHeist()
 
     private fun startHeist() {
-        val loot = loots.random(rnd)
-        val lx: Float; val ly: Float
-        if (compact) { // في الوضع العائم تظهر الغنيمة قرب الحرامي (النافذة صغيرة)
-            val ang = rnd.nextFloat() * 2f * PI.toFloat()
-            val dist = thiefRadius * (3f + 2f * rnd.nextFloat())
-            lx = brain.x + cos(ang) * dist; ly = brain.y + sin(ang) * dist
-        } else {
-            lx = arenaW * (0.2f + 0.6f * rnd.nextFloat())
-            ly = arenaH * (0.3f + 0.4f * rnd.nextFloat())
-        }
-        if (brain.beginHeist(lx, ly, loot.kind)) {
-            currentLoot = loot
-            listener?.onLootMessage(GameMessage.HEIST_START, loot.name)
+        val free = sceneIcons.filter { !it.stolen }
+        if (free.isEmpty()) { heistTimer = 5f; return }
+        val ic = free.random(rnd)
+        if (brain.beginHeist(ic.x, ic.y, ic.loot.kind)) {
+            targetIcon = ic
+            listener?.onLootMessage(GameMessage.HEIST_START, ic.loot.name)
         } else heistTimer = 3f
     }
 
@@ -403,7 +437,7 @@ class GameEngine(
 
     /** تحريك السجن من نافذة السجن العائمة (إحداثيات الشاشة). */
     fun dragJailTo(l: Float, t: Float) = moveJailTo(l, t)
-    fun commitJailPosition() = saveJailPosition()
+    fun commitJailPosition() { saveJailPosition(); layoutSceneIcons() }
 
     private fun saveJailPosition() {
         val rw = rangeW(); val rh = rangeH()
@@ -499,7 +533,7 @@ class GameEngine(
         if (!ok) { capture.finish(); return false }
         jail.start(settings.jailMinutes * 60_000L)
         progress.jailEndAt = jail.endAtMillis
-        awardRescue()
+        if (source != CaptureSource.POLICE) recoverStolen()
         val reward = progress.recordCapture(source == CaptureSource.CIRCLE)
         pointerDown = false; threadProgress = 0f; path.clear()
         listener?.onSound(SoundEffect.CATCH)
@@ -513,5 +547,6 @@ class GameEngine(
         const val MOVE_SLOP_PX = 24f
         const val SEEK_TIMEOUT_SEC = 45f
         const val SEEK_BONUS = 5
+        const val MAX_SCENE_ICONS = 8
     }
 }

@@ -11,6 +11,7 @@ import com.ghostthief.game.logic.JailTimer
 import com.ghostthief.game.logic.Loot
 import com.ghostthief.game.logic.LootKind
 import com.ghostthief.game.logic.LootRules
+import com.ghostthief.game.logic.ThiefBrain
 import com.ghostthief.game.logic.ThiefState
 import kotlin.math.PI
 import kotlin.math.hypot
@@ -156,7 +157,8 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
             GameMessage.NOT_HERE -> context.getString(R.string.msg_not_here)
             GameMessage.OUCH -> context.getString(R.string.msg_ouch)
             GameMessage.POLICE_ARREST -> context.getString(R.string.msg_police_arrest)
-            GameMessage.HEIST_START, GameMessage.RESCUED, GameMessage.ESCAPED_LOOT,
+            GameMessage.RECOVERED -> context.getString(R.string.msg_recovered, points)
+            GameMessage.STOLEN, GameMessage.HEIST_START, GameMessage.RESCUED, GameMessage.ESCAPED_LOOT,
             GameMessage.STASHED, GameMessage.DROPPED_LOOT -> ""
         }
         if (text.isEmpty()) return
@@ -167,6 +169,7 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
                 GameMessage.CIRCLE_FAILED, GameMessage.TRY_AGAIN -> burst(e.brain.x, e.brain.y, false)
                 GameMessage.ESCAPED -> burst(e.jailCenterX(), e.jailCenterY(), false)
                 GameMessage.FOUND -> burst(e.brain.x, e.brain.y, true)
+                GameMessage.RECOVERED -> for (ic in e.sceneIcons) if (ic.pop > 0f) burst(ic.x, ic.y, true)
                 GameMessage.OUCH -> burst(e.brain.x, e.brain.y, false)
                 else -> {}
             }
@@ -177,6 +180,7 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
         val e = engine ?: return
         val text = when (msg) {
             GameMessage.HEIST_START -> context.getString(R.string.msg_heist_start, name)
+            GameMessage.STOLEN -> context.getString(R.string.msg_stolen, name)
             GameMessage.RESCUED -> context.getString(R.string.msg_rescued, name, points)
             GameMessage.ESCAPED_LOOT -> context.getString(R.string.msg_escaped_loot, name)
             GameMessage.STASHED -> context.getString(R.string.msg_stashed, name)
@@ -208,18 +212,17 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
         when (role) {
             Role.FULL -> {
                 drawJail(c, e, sp)
-                drawLootBefore(c, e)
+                drawSceneIcons(c, e)
                 drawActors(c, e, sp) // ترتيب العمق: الأدنى على الشاشة يُرسم أمام
-                drawLootCarried(c, e)
+                drawDraggedLoot(c, e)
+                drawStolenBadge(c, e)
                 drawTrail(c, e)
                 drawParticles(c)
                 drawMessage(c)
             }
             Role.ACTOR -> {
                 c.save(); c.translate(-originX, -originY)
-                drawLootBefore(c, e)
                 drawThief(c, e, sp)
-                drawLootCarried(c, e)
                 drawTrail(c, e)
                 drawParticles(c)
                 c.restore()
@@ -260,6 +263,11 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
         val flip = b.facing < 0
         val x = b.x; val y = b.y
         when (b.state) {
+            ThiefState.SNEAK -> { // يتوقف عند الأيقونة ويتلفّت ليتأكد أن لا أحد يراه
+                drawSprite(c, sp.stand, x, y + bob(b.stateTime), 1f, flip, 1f)
+                drawFx(c, sp.question, x + (if (flip) -1 else 1) * thiefRadius() * 0.9f, y - thiefRadius() * 1.5f, thiefRadius() * 0.9f, 0f, 1f)
+            }
+            ThiefState.GRAB -> drawSprite(c, sp.hide, x, y + thiefRadius() * 0.25f, 1f, flip, 1f) // ينحني ويسحبها داخل كيسه
             ThiefState.RUN, ThiefState.FLEE, ThiefState.HEIST_GO, ThiefState.CARRY ->
                 drawSprite(c, sp.run[(b.runClock * 10f).toInt() % 4], x, y, b.scale, flip, 1f)
             ThiefState.DRAG -> { // يسحب بجهد: حركة بطيئة واهتزاز
@@ -447,33 +455,60 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
         c.drawText(loot.name + " • " + LootRules.formatSize(loot.sizeBytes), cx, cy + side / 2f + 12f * density, textPaint)
     }
 
-    /** الغنيمة قبل الالتقاط أو أثناء سحبها بحبل. */
-    private fun drawLootBefore(c: Canvas, e: GameEngine) {
-        val loot = e.currentLoot ?: return
+    /** أيقونات الغنائم الظاهرة في المشهد (غير المسروقة). */
+    private fun drawSceneIcons(c: Canvas, e: GameEngine) {
+        if (e.sceneIcons.isEmpty()) return
         val b = e.brain
-        when (b.state) {
-            ThiefState.HEIST_GO -> drawLootCard(c, loot, b.lootX, b.lootY, 1f, 1f)
-            ThiefState.DRAG -> {
-                val hx = b.x - b.facing * thiefRadius() * 0.35f; val hy = b.y + thiefRadius() * 0.1f
-                val path = Path(); path.moveTo(hx, hy)
-                path.quadTo((hx + b.lootX) / 2f, (hy + b.lootY) / 2f + 14f * density, b.lootX, b.lootY)
-                trailPaint.color = Color.rgb(121, 85, 72); trailPaint.strokeWidth = 5f * density
-                c.drawPath(path, trailPaint)
-                trailPaint.color = Color.rgb(188, 143, 110); trailPaint.strokeWidth = 2f * density
-                c.drawPath(path, trailPaint)
-                drawLootCard(c, loot, b.lootX, b.lootY, 1.15f, 1f)
+        val target = e.targetIcon
+        for (ic in e.sceneIcons) {
+            if (ic.stolen) continue                                  // داخل الكيس: لا تُرسم في أي مكان
+            if (ic === target && b.state == ThiefState.DRAG) continue // تُرسم مسحوبة بالحبل
+            var cx = ic.x; var cy = ic.y; var sc = 1f; var al = 1f
+            if (ic === target && b.state == ThiefState.GRAB) {
+                // تطير داخل الكيس (خلف الحرامي) وتصغر حتى تختفي
+                val pr = (b.stateTime / ThiefBrain.GRAB_SECONDS).coerceIn(0f, 1f)
+                val e2 = pr * pr * (3f - 2f * pr)
+                val bagX = b.x - b.facing * thiefRadius() * 0.55f; val bagY = b.y + thiefRadius() * 0.1f
+                cx = ic.x + (bagX - ic.x) * e2; cy = ic.y + (bagY - ic.y) * e2
+                sc = 1f - 0.85f * e2; al = 1f - 0.5f * e2
+            } else {
+                cy += sin(System.nanoTime() / 4.0e8 + ic.x).toFloat() * 2f * density   // طفو خفيف
+                if (ic === target && b.state == ThiefState.SNEAK) { // الأيقونة التي ينوي سرقتها تتوهج
+                    p.style = Paint.Style.STROKE; p.strokeWidth = 3f * density; p.color = Color.argb(160, 255, 193, 7)
+                    c.drawCircle(cx, cy, thiefRadius() * 0.95f, p); p.style = Paint.Style.FILL
+                }
             }
-            else -> {}
+            sc *= 1f + ic.pop * 0.35f
+            drawLootCard(c, ic.loot, cx, cy, sc, al)
         }
     }
 
-    /** الغنيمة المحمولة فوق رأس الحرامي. */
-    private fun drawLootCarried(c: Canvas, e: GameEngine) {
-        val loot = e.currentLoot ?: return
+    /** أيقونة كبيرة يسحبها الحرامي بحبل. */
+    private fun drawDraggedLoot(c: Canvas, e: GameEngine) {
+        val ic = e.targetIcon ?: return
         val b = e.brain
-        if (b.carrying && b.state != ThiefState.DRAG && b.alpha > 0.05f) {
-            drawLootCard(c, loot, b.x, b.y - thiefRadius() * 1.75f, 0.7f, if (b.state == ThiefState.CARRY) 1f else b.alpha)
-        }
+        if (b.state != ThiefState.DRAG) return
+        val hx = b.x - b.facing * thiefRadius() * 0.35f; val hy = b.y + thiefRadius() * 0.1f
+        val path = Path(); path.moveTo(hx, hy)
+        path.quadTo((hx + b.lootX) / 2f, (hy + b.lootY) / 2f + 14f * density, b.lootX, b.lootY)
+        trailPaint.color = Color.rgb(121, 85, 72); trailPaint.strokeWidth = 5f * density
+        c.drawPath(path, trailPaint)
+        trailPaint.color = Color.rgb(188, 143, 110); trailPaint.strokeWidth = 2f * density
+        c.drawPath(path, trailPaint)
+        drawLootCard(c, ic.loot, b.lootX, b.lootY, 1.15f, 1f)
+    }
+
+    /** شارة عدد المسروقات في الكيس (تعود كلها عند القبض على الحرامي). */
+    private fun drawStolenBadge(c: Canvas, e: GameEngine) {
+        val n = e.stolenCount
+        if (n <= 0) return
+        val t = context.getString(R.string.hud_stolen, n)
+        textPaint.textSize = 13f * density; textPaint.color = Color.WHITE
+        val w = textPaint.measureText(t) + 20f * density
+        val l = 8f * density; val top = 8f * density
+        p.style = Paint.Style.FILL; p.color = Color.argb(215, 183, 28, 28)
+        c.drawRoundRect(l, top, l + w, top + 26f * density, 13f * density, 13f * density, p)
+        c.drawText(t, l + w / 2f, top + 18f * density, textPaint)
     }
 
     private fun drawJail(c: Canvas, e: GameEngine, sp: Sprites) {

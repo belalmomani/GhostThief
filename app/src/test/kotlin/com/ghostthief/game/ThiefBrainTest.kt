@@ -53,47 +53,70 @@ class ThiefBrainTest {
 
     private fun heistBrain() = brain().also { it.x = 100f; it.y = 300f }
 
-    @Test fun smallLoot_carriedThenEscapesWithIt() {
+    @Test fun heist_runsToIcon_stops_looksAround_thenGrabsIt() {
         val b = heistBrain()
         assertTrue(b.beginHeist(300f, 300f, com.ghostthief.game.logic.LootKind.SMALL))
-        assertTrue(advanceUntil(b, ThiefState.CARRY, 5f)); assertTrue(b.carrying)
-        advance(b, 7.3f)
-        assertFalse(b.carrying); assertNull(b.lootKind)
-        assertEquals(com.ghostthief.game.logic.LootEvent.ESCAPED_WITH, b.takeLootEvent())
+        assertEquals(ThiefState.HEIST_GO, b.state)
+        assertTrue(advanceUntil(b, ThiefState.SNEAK, 5f))                // يتوقف عند الأيقونة
+        var flips = 0; var last = b.facing; var t = 0f
+        while (b.state == ThiefState.SNEAK && t < 3f) { b.update(0.05f); t += 0.05f; if (b.facing != last) { flips++; last = b.facing } }
+        assertTrue(flips >= 2)                                           // يتلفّت يميناً ويساراً
+        assertEquals(ThiefState.GRAB, b.state)
+        assertEquals(com.ghostthief.game.logic.LootEvent.NONE, b.takeLootEvent()) // لم تُسرق بعد
+        advance(b, 0.7f)
+        assertEquals(com.ghostthief.game.logic.LootEvent.STOLEN, b.takeLootEvent())
     }
 
-    @Test fun mediumLoot_isStashedAfterHiding() {
-        val b = heistBrain()
-        b.beginHeist(300f, 300f, com.ghostthief.game.logic.LootKind.MEDIUM)
-        assertTrue(advanceUntil(b, ThiefState.CARRY, 5f))
-        advance(b, 1.4f); assertTrue(b.state == ThiefState.FADE_OUT || b.state == ThiefState.HIDDEN)
-        advance(b, 4.2f)
-        assertEquals(com.ghostthief.game.logic.LootEvent.STASHED, b.takeLootEvent()); assertFalse(b.carrying)
+    private fun toGrabEnd(b: ThiefBrain, kind: com.ghostthief.game.logic.LootKind) {
+        b.beginHeist(300f, 300f, kind)
+        assertTrue(advanceUntil(b, ThiefState.GRAB, 8f))
+        advance(b, 0.7f)
     }
 
-    @Test fun largeLoot_isDraggedWithRopeSlowlyToTheEdge() {
-        val b = heistBrain()
-        b.beginHeist(300f, 300f, com.ghostthief.game.logic.LootKind.LARGE)
-        assertTrue(advanceUntil(b, ThiefState.DRAG, 5f)); assertTrue(b.carrying)
-        val x0 = b.x; advance(b, 1f)
-        assertTrue(Math.abs(b.x - x0) < 80f) // بطيء بسبب الثقل
-        advance(b, 16f)
-        assertEquals(com.ghostthief.game.logic.LootEvent.ESCAPED_WITH, b.takeLootEvent()); assertFalse(b.carrying)
+    @Test fun smallLoot_isCarriedAwayThenThiefRunsOn() {
+        val b = heistBrain(); toGrabEnd(b, com.ghostthief.game.logic.LootKind.SMALL)
+        assertEquals(ThiefState.CARRY, b.state)
+        assertEquals(com.ghostthief.game.logic.LootEvent.STOLEN, b.takeLootEvent())
+        advance(b, 4.3f); assertEquals(ThiefState.RUN, b.state)
     }
 
-    @Test fun poke_whileCarrying_dropsLoot() {
-        val b = heistBrain()
-        b.beginHeist(300f, 300f, com.ghostthief.game.logic.LootKind.SMALL)
-        advanceUntil(b, ThiefState.CARRY, 5f)
-        assertTrue(b.poke()); assertFalse(b.carrying)
-        assertEquals(com.ghostthief.game.logic.LootEvent.DROPPED, b.takeLootEvent())
+    @Test fun mediumLoot_thiefHidesWithIt() {
+        val b = heistBrain(); toGrabEnd(b, com.ghostthief.game.logic.LootKind.MEDIUM)
+        assertEquals(com.ghostthief.game.logic.LootEvent.STOLEN, b.takeLootEvent())
+        assertTrue(b.state == ThiefState.FADE_OUT || b.state == ThiefState.HIDDEN)
     }
 
-    @Test fun capture_whileCarrying_rescuesLoot() {
-        val b = heistBrain()
-        b.beginHeist(300f, 300f, com.ghostthief.game.logic.LootKind.LARGE)
-        advanceUntil(b, ThiefState.DRAG, 5f)
-        assertTrue(b.capture(700f, 100f))
-        assertEquals(com.ghostthief.game.logic.LootKind.LARGE, b.takeRescued())
+    @Test fun largeLoot_isDraggedWithRopeThenStolenAtTheEdge() {
+        val b = heistBrain(); toGrabEnd(b, com.ghostthief.game.logic.LootKind.LARGE)
+        assertEquals(ThiefState.DRAG, b.state); assertNotNull(b.lootKind)
+        val x0 = b.x; advance(b, 1f); assertTrue(Math.abs(b.x - x0) < 80f)   // بطيء بسبب الثقل
+        advance(b, 18f)
+        assertEquals(com.ghostthief.game.logic.LootEvent.STOLEN, b.takeLootEvent()); assertNull(b.lootKind)
+    }
+
+    @Test fun poke_whileSneaking_scaresHimOff_iconStays() {
+        val b = heistBrain(); b.beginHeist(300f, 300f, com.ghostthief.game.logic.LootKind.SMALL)
+        assertTrue(advanceUntil(b, ThiefState.SNEAK, 5f))
+        assertTrue(b.poke())
+        assertEquals(com.ghostthief.game.logic.LootEvent.ABORTED, b.takeLootEvent())
+        advance(b, 1f); assertEquals(com.ghostthief.game.logic.LootEvent.NONE, b.takeLootEvent())
+    }
+
+    @Test fun poke_whileDragging_dropsTheIconBack() {
+        val b = heistBrain(); toGrabEnd(b, com.ghostthief.game.logic.LootKind.LARGE)
+        assertTrue(b.poke()); assertEquals(com.ghostthief.game.logic.LootEvent.ABORTED, b.takeLootEvent())
+    }
+
+    @Test fun capture_whileSneaking_abortsTheTheft() {
+        val b = heistBrain(); b.beginHeist(300f, 300f, com.ghostthief.game.logic.LootKind.SMALL)
+        advanceUntil(b, ThiefState.SNEAK, 5f)
+        assertTrue(b.capture(700f, 100f)); assertEquals(com.ghostthief.game.logic.LootEvent.ABORTED, b.takeLootEvent())
+    }
+
+    @Test fun poke_afterTheTheft_doesNotReturnTheIcon() {
+        val b = heistBrain(); toGrabEnd(b, com.ghostthief.game.logic.LootKind.SMALL)
+        b.takeLootEvent()                                                // STOLEN
+        assertTrue(b.poke())
+        assertEquals(com.ghostthief.game.logic.LootEvent.NONE, b.takeLootEvent()) // ما دخل الكيس يبقى معه
     }
 }

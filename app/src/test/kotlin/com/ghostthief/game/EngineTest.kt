@@ -161,35 +161,6 @@ class EngineTest {
         assertTrue(e.brain.state == ThiefState.FADE_OUT || e.brain.state == ThiefState.HIDDEN)
     }
 
-    @Test fun heist_rescue_giveBonusOnCapture() {
-        val env = Env(); env.settings.heistEnabled = true
-        val e = env.engine(); e.loots = listOf(com.ghostthief.game.logic.Loot("WhatsApp", 200L * 1024 * 1024, true))
-        e.triggerHeist(); assertNotNull(e.currentLoot)
-        e.brain.x = e.brain.lootX - 20f; e.brain.y = e.brain.lootY // بجانب الغنيمة
-        advanceEngine(e, 0.3f)
-        assertEquals(ThiefState.DRAG, e.brain.state)
-        assertTrue(e.beginCapture(CaptureSource.CIRCLE))
-        assertEquals(15 + 40, env.repo.load().points) // قبض دائري + مكافأة غنيمة كبيرة
-        assertNull(e.currentLoot)
-    }
-
-    @Test fun heist_disabled_neverStarts() {
-        val env = Env(); val e = env.engine(); e.loots = listOf(com.ghostthief.game.logic.Loot("A", 1L, false))
-        advanceEngine(e, 40f)
-        assertNull(e.currentLoot)
-    }
-
-    @Test fun compactMode_smallerThief_andLootAppearsNearIt() {
-        val env = Env(); env.settings.heistEnabled = true
-        val e = env.engine(); e.compact = true; e.sizeFactor = 0.65f; e.setArena(1080f, 2000f, 2f)
-        assertTrue(e.thiefRadius < 48f * 2f * 0.7f)
-        e.loots = listOf(com.ghostthief.game.logic.Loot("A", 1L, false))
-        e.brain.x = 500f; e.brain.y = 1000f
-        e.triggerHeist()
-        val d = Math.hypot((e.brain.lootX - 500f).toDouble(), (e.brain.lootY - 1000f).toDouble())
-        assertTrue(d <= e.thiefRadius * 5.1f)
-    }
-
     @Test fun jailWindowDrag_isSavedAndRestored() {
         val env = Env(); val e = env.engine()
         e.dragJailTo(200f, 300f); e.commitJailPosition()
@@ -217,12 +188,94 @@ class EngineTest {
         assertFalse("sharp_eyes" in env.repo.load().achievements)
     }
 
-    @Test fun rescuingLargeLoot_unlocksRescueAchievements() {
+
+    private fun loot(name: String, mb: Long) = com.ghostthief.game.logic.Loot(name, mb * 1024 * 1024, true)
+
+    /** يبدأ سرقة ويضع الحرامي بجانب الأيقونة المستهدفة. */
+    private fun startHeistNearIcon(e: GameEngine) {
+        e.triggerHeist(); assertNotNull(e.targetIcon)
+        e.brain.x = e.brain.lootX - 20f; e.brain.y = e.brain.lootY
+    }
+
+    @Test fun sceneIcons_atMostEight_andNeverOverTheJail() {
         val env = Env(); env.settings.heistEnabled = true
-        val e = env.engine(); e.loots = listOf(com.ghostthief.game.logic.Loot("Big", 500L * 1024 * 1024, true))
-        e.triggerHeist(); e.brain.x = e.brain.lootX - 20f; e.brain.y = e.brain.lootY
-        advanceEngine(e, 0.3f); e.beginCapture(CaptureSource.CIRCLE)
-        val ach = env.repo.load().achievements
-        assertTrue("first_rescue" in ach && "large_rescue" in ach)
+        val e = env.engine(); e.loots = (1..12).map { loot("App$it", it * 10L) }
+        assertEquals(8, e.sceneIcons.size)
+        val m = e.thiefRadius * 1.1f
+        for (ic in e.sceneIcons) {
+            val over = ic.x + m > e.jailLeft() && ic.x - m < e.jailLeft() + e.jailW && ic.y + m > e.jailTop() && ic.y - m < e.jailTop() + e.jailH
+            assertFalse(over)
+        }
+    }
+
+    @Test fun compactMode_hasNoSceneIcons_andSmallerThief() {
+        val env = Env(); env.settings.heistEnabled = true
+        val e = env.engine(); e.compact = true; e.sizeFactor = 0.65f; e.setArena(1080f, 2000f, 2f)
+        assertTrue(e.thiefRadius < 48f * 2f * 0.7f)
+        e.loots = listOf(loot("A", 5))
+        assertTrue(e.sceneIcons.isEmpty())
+    }
+
+    @Test fun thiefStealsIcon_itDisappearsFromTheScene() {
+        val env = Env(); env.settings.heistEnabled = true
+        val e = env.engine(); e.loots = listOf(loot("Chat", 5))
+        startHeistNearIcon(e); val ic = e.targetIcon!!
+        advanceEngine(e, 3.0f)
+        assertTrue(ic.stolen); assertEquals(1, e.stolenCount)
+    }
+
+    @Test fun stolenIcon_staysGoneWhileTheThiefIsFree() {
+        val env = Env(); env.settings.heistEnabled = true
+        val e = env.engine(); e.loots = listOf(loot("Chat", 5))
+        startHeistNearIcon(e); advanceEngine(e, 3.0f)
+        advanceEngine(e, 25f)
+        assertEquals(1, e.stolenCount)
+    }
+
+    @Test fun catchingByHand_bringsAllStolenIconsBack_withBonus() {
+        val env = Env(); env.settings.heistEnabled = true
+        val e = env.engine(); e.loots = listOf(loot("Chat", 5))
+        startHeistNearIcon(e); val ic = e.targetIcon!!; advanceEngine(e, 3.0f)
+        assertTrue(ic.stolen)
+        assertTrue(e.beginCapture(CaptureSource.CIRCLE))
+        assertEquals(0, e.stolenCount); assertFalse(ic.stolen); assertTrue(ic.pop > 0f)
+        assertEquals(15 + 10, env.repo.load().points)      // قبض دائري + مكافأة غنيمة صغيرة
+        assertTrue("first_rescue" in env.repo.load().achievements)
+    }
+
+    @Test fun policeArrest_bringsStolenIconsBack() {
+        val env = Env(); env.settings.heistEnabled = true
+        val e = env.engine(); e.loots = listOf(loot("Chat", 5))
+        startHeistNearIcon(e); advanceEngine(e, 3.0f); assertEquals(1, e.stolenCount)
+        e.setPoliceMode(true); e.squad.place(e.brain.x, e.brain.y)
+        advanceEngine(e, 0.1f)
+        assertEquals(0, e.stolenCount)
+    }
+
+    @Test fun pokingTheThiefWhileSneaking_savesTheIcon() {
+        val env = Env(); env.settings.heistEnabled = true
+        val e = env.engine(); e.loots = listOf(loot("Chat", 5))
+        startHeistNearIcon(e); val ic = e.targetIcon!!
+        advanceEngine(e, 0.4f); assertEquals(ThiefState.SNEAK, e.brain.state)
+        e.touchDown(e.brain.x, e.brain.y); e.touchUp(e.brain.x, e.brain.y)
+        advanceEngine(e, 3.0f)
+        assertFalse(ic.stolen); assertNull(e.targetIcon)
+    }
+
+    @Test fun largeIcon_isDraggedAway_thenCaughtRecoversItWithLargeAchievement() {
+        val env = Env(); env.settings.heistEnabled = true
+        val e = env.engine(); e.loots = listOf(loot("Game", 400))
+        startHeistNearIcon(e)
+        var t = 0f
+        while (e.stolenCount == 0 && t < 40f) { e.update(0.05f); t += 0.05f }
+        assertEquals(1, e.stolenCount)
+        assertTrue(e.beginCapture(CaptureSource.CIRCLE))
+        assertTrue("large_rescue" in env.repo.load().achievements)
+    }
+
+    @Test fun heistDisabled_neverStarts() {
+        val env = Env(); val e = env.engine(); e.loots = listOf(loot("A", 1))
+        advanceEngine(e, 40f)
+        assertNull(e.targetIcon); assertEquals(0, e.stolenCount)
     }
 }

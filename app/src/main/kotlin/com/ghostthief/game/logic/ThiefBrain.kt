@@ -6,17 +6,24 @@ import kotlin.math.hypot
 import kotlin.math.sin
 import kotlin.random.Random
 
-/** حالات الحرامي. الاختفاء/الظهور الشفاف: FADE_OUT ثم HIDDEN ثم FADE_IN. السرقة: HEIST_GO ثم CARRY أو DRAG. */
+/** حالات الحرامي. الاختفاء: FADE_OUT ثم HIDDEN ثم FADE_IN. السرقة: HEIST_GO ثم SNEAK ثم GRAB ثم CARRY/DRAG. */
 enum class ThiefState {
     RUN, STAND, LOOK, FADE_OUT, HIDDEN, FADE_IN,
     SURPRISED, FLEE, HELD, CAUGHT, JAILED, ESCAPING,
     HEIST_GO, CARRY, DRAG,
     /** مكبَّل مع الشرطي (يتحرك مع الشرطي والسيارة). */
-    ARRESTED
+    ARRESTED,
+    /** عند الأيقونة: يتلفّت يميناً ويساراً ليتأكد أن لا أحد يراه. */
+    SNEAK,
+    /** يسحب الأيقونة داخل كيسه. */
+    GRAB
 }
 
-/** أحداث السرقة التي يستهلكها المحرك مرة واحدة. */
-enum class LootEvent { NONE, PICKED, ESCAPED_WITH, STASHED, DROPPED }
+/**
+ * أحداث السرقة (يستهلكها المحرك مرة واحدة):
+ * STOLEN = اكتملت السرقة (الأيقونة صارت في الكيس أو خرجت بالحبل)، ABORTED = فشلت (نقرة/قبض قبل اكتمالها).
+ */
+enum class LootEvent { NONE, STOLEN, ABORTED }
 
 /** قيم قابلة للضبط (السرعة والمدة). */
 class MotionConfig(
@@ -59,6 +66,7 @@ class ThiefBrain(
         private set
     /** أثناء محاولة اللف يبطئ الحرامي ليسهل الإمساك به. */
     var slowFactor = 1f
+
     /** احتمال الاختباء بعد الركض (يُخفَّض في وضع الشرطي ليسهل اللحاق به). */
     var hideChance = 0.45f
     /** الشرطي قريب: الحرامي يهرب منه. */
@@ -77,27 +85,21 @@ class ThiefBrain(
         private set
 
     // ---- السرقة ----
+    /** موضع الأيقونة المستهدفة (وأثناء السحب بالحبل: موضع الأيقونة المسحوبة). */
     var lootX = 0f
         private set
     var lootY = 0f
         private set
-    /** غير null أثناء سرقة نشطة (قبل الالتقاط أو أثناء الحمل/السحب). */
+    /** غير null أثناء سرقة جارية (من التوجه للأيقونة حتى اكتمالها). */
     var lootKind: LootKind? = null
-        private set
-    /** true عندما تكون الغنيمة بحوزته الآن (يحملها أو يسحبها). */
-    var carrying = false
-        private set
-    /** نوع الغنيمة التي استُرجعت بالقبض (لمرة واحدة). */
-    var rescuedKind: LootKind? = null
         private set
     var lootEvent = LootEvent.NONE
         private set
     /** طول الحبل بالبكسل (يضبطه المحرك نسبةً لحجم الحرامي). */
     var ropeLength = 110f
-    private var stashPending = false
+    private var stashAfterGrab = false
     /** بعد الضربة بالنقر: يهرب ثم يختبئ وهو يتألم. */
     private var hurtHide = false
-
     /** الحد الأعلى للحركة (مثلاً أسفل شريط الحالة في الوضع العائم). */
     var minY = 0f
 
@@ -131,13 +133,13 @@ class ThiefBrain(
     fun isCatchable(): Boolean = when (state) {
         ThiefState.RUN, ThiefState.STAND, ThiefState.LOOK, ThiefState.SURPRISED,
         ThiefState.FLEE, ThiefState.FADE_IN, ThiefState.HELD,
-        ThiefState.HEIST_GO, ThiefState.CARRY, ThiefState.DRAG -> true
+        ThiefState.HEIST_GO, ThiefState.CARRY, ThiefState.DRAG,
+        ThiefState.SNEAK, ThiefState.GRAB -> true
         else -> false
     }
 
     /** يأخذ الحدث الأخير ويصفّره. */
     fun takeLootEvent(): LootEvent { val e = lootEvent; lootEvent = LootEvent.NONE; return e }
-    fun takeRescued(): LootKind? { val k = rescuedKind; rescuedKind = null; return k }
 
     fun update(dt: Float) {
         val d = dt.coerceIn(0f, 0.1f)
@@ -204,9 +206,6 @@ class ThiefBrain(
                 if (p >= 1f) {
                     alpha = 1f
                     hideFolderAlpha = 0f
-                    if (stashPending) { // خبّأ الغنيمة وعاد بدونها
-                        stashPending = false; carrying = false; lootKind = null; lootEvent = LootEvent.STASHED
-                    }
                     startRun()
                 }
             }
@@ -236,23 +235,33 @@ class ThiefBrain(
             }
             ThiefState.ARRESTED -> { /* يتحرك مع الشرطي (يضبطه المحرك) */ }
             ThiefState.HEIST_GO -> updateHeistGo(d)
-            ThiefState.CARRY -> {
-                move(d, speed() * 1.4f)
+            ThiefState.SNEAK -> {
+                // يتلفّت: يميناً ثم يساراً ثم يميناً ليتأكد أن لا أحد يراه
+                val t = stateTime
+                val look = when { t < 0.45f -> 1; t < 0.95f -> -1; t < 1.4f -> 1; else -> -1 }
+                facing = if (lootX >= x) look else -look
                 if (stateTime >= stateDuration) {
-                    if (stashPending) beginHide() // يخبّئها: يختفي ومعه الغنيمة
-                    else { carrying = false; lootKind = null; lootEvent = LootEvent.ESCAPED_WITH; startRun() }
+                    facing = if (lootX >= x) 1 else -1
+                    enter(ThiefState.GRAB, GRAB_SECONDS)
                 }
             }
+            ThiefState.GRAB -> {
+                if (stateTime >= stateDuration) finishGrab()
+            }
+            ThiefState.CARRY -> {
+                move(d, speed() * 1.4f)
+                if (stateTime >= stateDuration) startRun()
+            }
             ThiefState.DRAG -> {
-                // يسحب غنيمة كبيرة بحبل نحو حافة الشاشة بجهد شديد (حركة بطيئة)
+                // أيقونة كبيرة لا تدخل الكيس: يسحبها بحبل بجهد نحو حافة الشاشة (حركة بطيئة)
                 x += facing * speed() * 0.35f * d
                 val tx = x - facing * ropeLength
-                lootX += (tx - lootX) * minOf(1f, 8f * d) // الغنيمة تتبع بحبل مشدود
+                lootX += (tx - lootX) * minOf(1f, 8f * d) // الأيقونة تتبع بحبل مشدود
                 lootY += (y - lootY) * minOf(1f, 8f * d)
                 runClock += d * 0.8f
                 val out = (facing > 0 && x > arenaW - 8f) || (facing < 0 && x < 8f)
                 if (out || stateTime >= stateDuration) {
-                    carrying = false; lootKind = null; lootEvent = LootEvent.ESCAPED_WITH
+                    lootKind = null; lootEvent = LootEvent.STOLEN
                     facing = -facing
                     x = x.coerceIn(margin(), arenaW - margin())
                     startRun()
@@ -264,8 +273,11 @@ class ThiefBrain(
     private fun updateHeistGo(d: Float) {
         val dx = lootX - x; val dy = lootY - y
         val dist = hypot(dx, dy)
-        if (dist < 28f) { pickUpLoot(); return }
-        if (stateTime >= stateDuration) { lootKind = null; startRun(); return } // مهلة: يتراجع
+        if (dist < 28f) { // يتوقف فجأة عند الأيقونة
+            enter(ThiefState.SNEAK, SNEAK_SECONDS)
+            return
+        }
+        if (stateTime >= stateDuration) { abortHeist(); startRun(); return } // مهلة: يتراجع
         val v = speed() * 1.3f
         x += dx / dist * v * d
         y += dy / dist * v * d
@@ -273,18 +285,28 @@ class ThiefBrain(
         runClock += d * 1.3f
     }
 
-    private fun pickUpLoot() {
+    /** انتهت حركة السحب داخل الكيس: صغيرة = يركض بها، متوسطة = يخبّئها، كبيرة = يسحبها بحبل. */
+    private fun finishGrab() {
         val kind = lootKind ?: run { startRun(); return }
-        carrying = true
-        lootEvent = LootEvent.PICKED
         when (kind) {
-            LootKind.SMALL -> { facing = if (x < arenaW / 2) 1 else -1; enter(ThiefState.CARRY, 7f) }
-            LootKind.MEDIUM -> { stashPending = true; enter(ThiefState.CARRY, 1.2f) }
+            LootKind.SMALL -> {
+                lootKind = null; lootEvent = LootEvent.STOLEN
+                facing = if (x < arenaW / 2) 1 else -1
+                enter(ThiefState.CARRY, 4f)
+            }
+            LootKind.MEDIUM -> {
+                lootKind = null; lootEvent = LootEvent.STOLEN
+                beginHide()
+            }
             LootKind.LARGE -> {
                 facing = if (x < arenaW / 2) -1 else 1 // نحو أقرب حافة
                 enter(ThiefState.DRAG, 16f)
             }
         }
+    }
+
+    private fun abortHeist() {
+        if (lootKind != null) { lootKind = null; lootEvent = LootEvent.ABORTED }
     }
 
     private fun move(d: Float, v: Float) {
@@ -329,32 +351,29 @@ class ThiefBrain(
         if (state == ThiefState.RUN || state == ThiefState.STAND || state == ThiefState.LOOK) beginHide()
     }
 
-    /** يبدأ سرقة غنيمة موضوعة عند (lx, ly). */
+    /** يبدأ سرقة أيقونة موضوعة عند (lx, ly): يركض إليها ثم يتوقف ويتلفّت ثم يسحبها. */
     fun beginHeist(lx: Float, ly: Float, kind: LootKind): Boolean {
         if (state != ThiefState.RUN && state != ThiefState.STAND && state != ThiefState.LOOK) return false
-        lootX = lx.coerceIn(margin(), arenaW - margin()); lootY = ly.coerceIn(minY + margin(), (arenaH - margin()).coerceAtLeast(minY + margin()))
-        lootKind = kind; carrying = false; stashPending = false
+        lootX = lx.coerceIn(margin(), arenaW - margin())
+        lootY = ly.coerceIn(minY + margin(), (arenaH - margin()).coerceAtLeast(minY + margin()))
+        lootKind = kind
         facing = if (lootX >= x) 1 else -1
         enter(ThiefState.HEIST_GO, 12f)
         return true
     }
 
-    private fun dropLoot() {
-        if (carrying) lootEvent = LootEvent.DROPPED
-        carrying = false; lootKind = null; stashPending = false
-    }
-
     /**
-     * نقرة (ضربة خفيفة) على الحرامي: يسقط ما يحمله، يصرخ من الألم، يهرب ثم يختبئ.
-     * (كرتوني ومناسب للأطفال.)
+     * نقرة (ضربة خفيفة) على الحرامي: يصرخ من الألم، يهرب ثم يختبئ (كرتوني ومناسب للأطفال).
+     * إن كان في طريقه لسرقة أو يتلفّت عند الأيقونة أو يسحبها بحبل فتفشل السرقة وتبقى الأيقونة.
+     * أما ما سبق أن دخل كيسه فيبقى معه حتى يُقبض عليه.
      */
     fun poke(): Boolean {
         when (state) {
-            ThiefState.RUN, ThiefState.STAND, ThiefState.LOOK,
-            ThiefState.HEIST_GO, ThiefState.CARRY, ThiefState.DRAG -> {}
+            ThiefState.RUN, ThiefState.STAND, ThiefState.LOOK, ThiefState.CARRY,
+            ThiefState.HEIST_GO, ThiefState.SNEAK, ThiefState.DRAG -> {}
             else -> return false
         }
-        dropLoot()
+        abortHeist()
         hurtHide = true
         enter(ThiefState.SURPRISED, 0.4f)
         return true
@@ -362,6 +381,7 @@ class ThiefBrain(
 
     fun hold(): Boolean {
         if (!isCatchable() || state == ThiefState.HELD) return false
+        abortHeist()
         alpha = 1f; hideFolderAlpha = 0f
         hurtHide = false
         enter(ThiefState.HELD, Float.MAX_VALUE)
@@ -382,8 +402,8 @@ class ThiefBrain(
     /** يبدأ القبض: ينتقل إلى CAUGHT ثم يسحب إلى السجن. */
     fun capture(jailX: Float, jailY: Float, jailScaleFactor: Float = 0.45f): Boolean {
         if (!isCatchable()) return false
-        if (carrying) rescuedKind = lootKind
-        carrying = false; lootKind = null; stashPending = false; hurtHide = false
+        abortHeist()
+        hurtHide = false
         startX = x; startY = y
         targetX = jailX; targetY = jailY
         jailScale = jailScaleFactor
@@ -395,8 +415,8 @@ class ThiefBrain(
     /** القبض بواسطة الشرطي: يُكبَّل ويتحرك مع الشرطي ثم السيارة. */
     fun arrest(): Boolean {
         if (!isCatchable() || state == ThiefState.HELD) return false
-        if (carrying) rescuedKind = lootKind
-        carrying = false; lootKind = null; stashPending = false; hurtHide = false
+        abortHeist()
+        hurtHide = false
         alpha = 1f; hideFolderAlpha = 0f; scale = 1f; threatened = false
         enter(ThiefState.ARRESTED, Float.MAX_VALUE)
         return true
@@ -445,4 +465,9 @@ class ThiefBrain(
 
     fun currentStateDuration() = stateDuration
 
+    companion object {
+        /** مدة التلفّت عند الأيقونة وسحبها داخل الكيس. */
+        const val SNEAK_SECONDS = 1.7f
+        const val GRAB_SECONDS = 0.6f
+    }
 }
