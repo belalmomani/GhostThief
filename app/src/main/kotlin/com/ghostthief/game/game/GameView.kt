@@ -45,6 +45,16 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
     var onJailDrag: ((Float, Float) -> Unit)? = null
     var onJailDragEnd: (() -> Unit)? = null
 
+    companion object {
+        /** ارتفاع الشرطي نسبةً إلى ارتفاع الحرامي الواقف كما يُرسم (قيِّم هذه النسبة لتكبير/تصغير الشرطي). */
+        const val OFFICER_HEIGHT_RATIO = 0.78f
+        /** أبعاد صور الشرطي: مستوى القدمين وارتفاع المحتوى داخل اللوحة 256×320. */
+        private const val POLICE_FEET_Y = 310f
+        private const val POLICE_CONTENT_H = 285f
+        /** أسفل العجلات داخل صورة السيارة 440×230. */
+        private const val CAR_WHEEL_BOTTOM_Y = 216f
+    }
+
     private val density = resources.displayMetrics.density
     val jailPad: Float get() = 10f * density
     private var sprites: Sprites? = null
@@ -78,6 +88,8 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
 
     /** إيقاف الحركة لتوفير البطارية. */
     fun pause() {
+        engine?.stopAudio() // الصفارة والمحرك لا يستمران خارج اللعبة
+        fx?.stopLoops()
         running = false
         engine?.paused = true
         Choreographer.getInstance().removeFrameCallback(this)
@@ -177,6 +189,8 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
 
     override fun onSound(effect: SoundEffect) { fx?.play(effect) }
 
+    override fun onLoop(sound: LoopSound, on: Boolean, rate: Float) { fx?.loop(sound, on, rate) }
+
     private fun burst(cx: Float, cy: Float, happy: Boolean) {
         val colors = if (happy) intArrayOf(0xFFFFD54F.toInt(), 0xFF4FC3F7.toInt(), 0xFFFF8A65.toInt(), 0xFF81C784.toInt())
         else intArrayOf(0xFFE0E0E0.toInt(), 0xFFBDBDBD.toInt())
@@ -195,8 +209,7 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
             Role.FULL -> {
                 drawJail(c, e, sp)
                 drawLootBefore(c, e)
-                drawThief(c, e, sp)
-                drawPolice(c, e, sp)
+                drawActors(c, e, sp) // ترتيب العمق: الأدنى على الشاشة يُرسم أمام
                 drawLootCarried(c, e)
                 drawTrail(c, e)
                 drawParticles(c)
@@ -275,49 +288,81 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
             ThiefState.CAUGHT -> drawSprite(c, sp.caught, x, y, b.scale, false, 1f)
             ThiefState.ARRESTED -> if (e.squad.thiefVisible) { // مكبَّل بجانب الشرطي
                 drawSprite(c, sp.stand, x, y, b.scale, flip, 1f)
-                textPaint.textSize = 16f * density * b.scale; textPaint.color = Color.WHITE
-                c.drawText("🔒", x, y - thiefRadius() * 1.2f * b.scale, textPaint)
+                drawHandcuffs(c, x, y + thiefRadius() * 0.25f * b.scale, thiefRadius() * 0.5f * b.scale)
             }
             ThiefState.JAILED -> {}
         }
     }
 
     // ---- الشرطي وسيارة الشرطة ----
-    private fun drawPolice(c: Canvas, e: GameEngine, sp: Sprites) {
-        if (!e.policeActive) return
-        val sq = e.squad
-        if (sq.carVisible) {
-            val bmp = sp.policeCar
-            val s = sq.carWidth / bmp.width
-            val flip = sq.cfacing < 0
-            c.save(); c.translate(sq.cx, sq.cy); c.scale(if (flip) -s else s, s)
-            c.drawBitmap(bmp, -bmp.width / 2f, -bmp.height / 2f, p)
-            c.restore()
-            // أضواء الطوارئ تومض (أحمر/أزرق)
-            val redOn = ((sq.lightsClock * 5f).toInt() % 2) == 0
-            val lx = (if (redOn) 199f else 245f) - bmp.width / 2f
-            val ly = 30f - bmp.height / 2f
-            val gx = sq.cx + (if (flip) -lx else lx) * s
-            val gy = sq.cy + ly * s
-            val col = if (redOn) Color.rgb(255, 60, 60) else Color.rgb(60, 110, 255)
-            for ((r, a) in listOf(26f to 50, 16f to 90, 8f to 200)) {
-                p.color = col; p.alpha = a; c.drawCircle(gx, gy, r * s * 2.2f, p)
-            }
-            p.alpha = 255
+    /** ارتفاع الحرامي الواقف كما يُرسم فعلاً: مرجع حجم الشرطي وخط الأرض المشترك. */
+    private fun thiefStandDrawnH(sp: Sprites) = sp.stand.height * engineThiefHeight() / sp.refHeight
+
+    /** يرسم الحرامي والشرطي والسيارة مرتبين بحسب العمق (y) فلا يغطي أحدها الآخر خطأً. */
+    private fun drawActors(c: Canvas, e: GameEngine, sp: Sprites) {
+        val items = ArrayList<Pair<Float, () -> Unit>>(3)
+        items.add(e.brain.y to { drawThief(c, e, sp) })
+        if (e.policeActive) {
+            val sq = e.squad
+            if (sq.carVisible) items.add((sq.cy + 1f) to { drawCar(c, sq, sp) })
+            if (sq.officerVisible) items.add(sq.oy to { drawOfficer(c, sq, sp) })
         }
-        if (sq.officerVisible) {
-            val frame = if (sq.moving) sp.policeWalk[(sq.walkClock * 9f).toInt() % 4] else sp.policeStand
-            drawSprite(c, frame, sq.ox, sq.oy, sq.officerScale, sq.ofacing < 0, 1f)
-        }
+        items.sortBy { it.first }
+        for (it in items) it.second()
     }
 
-    /** مؤثر مرسوم (سحابة/نجوم/استفهام) بحجم معيّن وزاوية دوران. */
-    private fun drawFx(c: Canvas, bmp: Bitmap, cx: Float, cy: Float, size: Float, rotation: Float, alpha: Float) {
-        val s = size / bmp.width
-        p.alpha = (alpha.coerceIn(0f, 1f) * 255).toInt()
-        c.save(); c.translate(cx, cy); c.rotate(rotation); c.scale(s, s)
-        c.drawBitmap(bmp, -bmp.width / 2f, -bmp.height / 2f, p)
-        c.restore(); p.alpha = 255
+    private fun drawCar(c: Canvas, sq: com.ghostthief.game.logic.PoliceSquad, sp: Sprites) {
+        val bmp = sp.policeCar
+        val s = sq.carWidth / bmp.width
+        val flip = sq.cfacing < 0
+        val groundY = sq.cy + thiefStandDrawnH(sp) / 2f            // العجلات على نفس خط أرض الشخصيات
+        c.save(); c.translate(sq.cx, groundY); c.scale(if (flip) -s else s, s)
+        c.drawBitmap(bmp, -bmp.width / 2f, -CAR_WHEEL_BOTTOM_Y, p)
+        c.restore()
+        // أضواء الطوارئ تومض (أحمر/أزرق) فوق شريط الأضواء
+        val redOn = ((sq.lightsClock * 5f).toInt() % 2) == 0
+        val lx = ((if (redOn) 195f else 249f) - bmp.width / 2f) * s * (if (flip) -1f else 1f)
+        val ly = (29f - CAR_WHEEL_BOTTOM_Y) * s
+        val col = if (redOn) Color.rgb(255, 70, 70) else Color.rgb(70, 120, 255)
+        for ((r, a) in listOf(30f to 45, 19f to 90, 10f to 190)) {
+            p.color = col; p.alpha = a; c.drawCircle(sq.cx + lx, groundY + ly, r * s * 1.8f, p)
+        }
+        p.alpha = 255
+    }
+
+    private fun drawOfficer(c: Canvas, sq: com.ghostthief.game.logic.PoliceSquad, sp: Sprites) {
+        // سرعة عالية = ركض، بطيئة (قرب الهدف) = مشي، ثابت = وقوف
+        val frame = when {
+            !sq.moving -> sp.policeStand
+            sq.speedRatio > 0.7f -> sp.policeRun[(sq.walkClock * 11f).toInt() % 8]
+            else -> sp.policeWalk[(sq.walkClock * 8f).toInt() % 8]
+        }
+        val standH = thiefStandDrawnH(sp)
+        val groundY = sq.oy + standH / 2f                            // نفس خط أرض الحرامي
+        val s = (OFFICER_HEIGHT_RATIO * standH) / POLICE_CONTENT_H * sq.officerScale
+        c.save(); c.translate(sq.ox, groundY); c.scale(if (sq.ofacing < 0) -s else s, s)
+        c.drawBitmap(frame, -frame.width / 2f, -POLICE_FEET_Y, p)
+        c.restore()
+    }
+
+    /** أصفاد مرسومة (حلقتان وسلسلة) بدل أي رمز تعبيري. */
+    private fun drawHandcuffs(c: Canvas, cx: Float, cy: Float, size: Float) {
+        p.style = Paint.Style.STROKE; p.strokeWidth = size * 0.22f
+        p.color = Color.rgb(207, 214, 226)
+        val r = size * 0.42f; val dx = size * 0.62f
+        c.drawCircle(cx - dx, cy, r, p); c.drawCircle(cx + dx, cy, r, p)
+        p.strokeWidth = size * 0.16f; p.color = Color.rgb(150, 160, 178)
+        c.drawLine(cx - dx + r, cy, cx + dx - r, cy, p)
+        p.style = Paint.Style.FILL
+    }
+
+    private fun drawAppPlaceholder(c: Canvas, loot: Loot, r: RectF, a: Int) {
+        val palette = intArrayOf(0xFF1E88E5.toInt(), 0xFF43A047.toInt(), 0xFF8E24AA.toInt(), 0xFFF4511E.toInt(), 0xFF00897B.toInt(), 0xFF5D4037.toInt())
+        p.style = Paint.Style.FILL; p.color = palette[(loot.name.hashCode() and 0x7fffffff) % palette.size]; p.alpha = a
+        c.drawRoundRect(r, r.width() * 0.22f, r.width() * 0.22f, p)
+        textPaint.textSize = r.height() * 0.55f; textPaint.color = Color.argb(a, 255, 255, 255)
+        c.drawText(loot.name.take(1).uppercase(), r.centerX(), r.centerY() + r.height() * 0.2f, textPaint)
+        p.alpha = 255
     }
 
     private fun bob(t: Float) = (sin(t * 6f) * 2f * density)
@@ -394,7 +439,7 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
         val icon = LootCatalog.icons[loot.name]
         if (icon != null) { // أيقونة التطبيق الحقيقية
             p.alpha = a; c.drawBitmap(icon, null, r, p); p.alpha = 255
-        } else drawFileIcon(c, loot, r, a)
+        } else if (loot.isApp) drawAppPlaceholder(c, loot, r, a) else drawFileIcon(c, loot, r, a)
         p.style = Paint.Style.STROKE; p.strokeWidth = 2.5f * density; p.color = lootColor(loot.kind); p.alpha = a
         c.drawRoundRect(r, side * 0.2f, side * 0.2f, p)
         p.style = Paint.Style.FILL; p.alpha = 255

@@ -145,10 +145,10 @@
     <string name="ob_start">ابدأ اللعب</string>
     <string name="ob_skip">تخطي</string>
     <string name="kid_open_settings">إعدادات الأمان</string>
-    <string name="police_toggle">👮 الشرطي</string>
-    <string name="police_toggle_on">👮 الشرطي ✔</string>
-    <string name="police_hint">وضع الشرطي: حرّك الشرطي بإصبعك والمس الحرامي ليُقبض عليه، ثم تأخذهما سيارة الشرطة إلى السجن! 🚔</string>
-    <string name="msg_police_arrest">قبض الشرطي على الحرامي! 🚔</string>
-    <string name="ob_title4">الشرطي والسيارة 🚔</string>
+    <string name="police_toggle">الشرطي</string>
+    <string name="police_toggle_on">الشرطي (يعمل)</string>
+    <string name="police_hint">وضع الشرطي: حرّك الشرطي بإصبعك والمس الحرامي ليُقبض عليه، ثم تأخذهما سيارة الشرطة إلى السجن.</string>
+    <string name="msg_police_arrest">قبض الشرطي على الحرامي!</string>
+    <string name="ob_title4">الشرطي وسيارة الشرطة</string>
     <string name="ob_text4">اضغط زر «الشرطي» أثناء اللعب، ثم حرّك الشرطي بإصبعك واركض خلف الحرامي. عندما تلمسه تأتي سيارة الشرطة وتأخذهما إلى السجن!</string>
 </resources>

@@ -27,7 +27,8 @@ class Sprites(context: Context) {
     val stars = load(R.drawable.fx_stars)
     val question = load(R.drawable.fx_question)
     val policeStand = load(R.drawable.police_stand)
-    val policeWalk = listOf(R.drawable.police_walk1, R.drawable.police_walk2, R.drawable.police_walk3, R.drawable.police_walk4).map { load(it) }
+    val policeWalk = listOf(R.drawable.police_walk1, R.drawable.police_walk2, R.drawable.police_walk3, R.drawable.police_walk4, R.drawable.police_walk5, R.drawable.police_walk6, R.drawable.police_walk7, R.drawable.police_walk8).map { load(it) }
+    val policeRun = listOf(R.drawable.police_run1, R.drawable.police_run2, R.drawable.police_run3, R.drawable.police_run4, R.drawable.police_run5, R.drawable.police_run6, R.drawable.police_run7, R.drawable.police_run8).map { load(it) }
     val policeCar = load(R.drawable.police_car)
 
     /** ارتفاع إطار الركض المرجعي لتوحيد مقياس كل حالات الشخصية. */

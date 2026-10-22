@@ -1,5 +1,9 @@
 package com.ghostthief.game
 
+import com.ghostthief.game.game.GameListener
+import com.ghostthief.game.game.GameMessage
+import com.ghostthief.game.game.LoopSound
+import com.ghostthief.game.game.SoundEffect
 import com.ghostthief.game.logic.PoliceSquad
 import com.ghostthief.game.logic.PoliceStage
 import com.ghostthief.game.logic.ThiefBrain
@@ -67,5 +71,52 @@ class PoliceTest {
         advanceEngine(e, 0.1f); assertEquals(ThiefState.ARRESTED, e.brain.state)
         e.setPoliceMode(false)
         assertEquals(ThiefState.RUN, e.brain.state); assertFalse(e.squad.carVisible)
+    }
+
+    @Test fun officerSlowsDownNearTarget_soWalkReplacesRun() {
+        val sq = squad(); sq.place(100f, 300f); sq.moveTo(400f, 300f)
+        sq.update(0.05f); assertEquals(1f, sq.speedRatio, 0.01f)       // بعيد: سرعة كاملة (ركض)
+        repeat(60) { sq.update(0.05f); if (sq.ox > 360f) return@repeat }
+        sq.place(380f, 300f); sq.moveTo(400f, 300f); sq.update(0.05f)
+        assertTrue(sq.speedRatio < 0.5f)                               // قريب: بطيء (مشي)
+    }
+
+    @Test fun officerCannotWalkIntoTheJail() {
+        val sq = squad(); sq.place(200f, 300f); sq.setObstacle(300f, 200f, 420f, 400f)
+        sq.moveTo(360f, 300f)
+        repeat(60) { sq.update(0.05f) }
+        val inside = sq.ox in 300f..420f && sq.oy in 200f..400f
+        assertFalse(inside)
+    }
+
+    private class Loops : GameListener {
+        val events = mutableListOf<Pair<LoopSound, Boolean>>()
+        override fun onMessage(msg: GameMessage, points: Int) {}
+        override fun onSound(effect: SoundEffect) {}
+        override fun onLoop(sound: LoopSound, on: Boolean, rate: Float) { events += sound to on }
+    }
+
+    @Test fun sirenAndEngine_startOnce_andStopWhenChaseEnds() {
+        val env = Env(); val e = env.engine(); val l = Loops(); e.listener = l
+        e.setPoliceMode(true)
+        e.brain.x = 300f; e.brain.y = 300f; e.squad.place(300f, 300f)
+        advanceEngine(e, 20f)
+        val siren = l.events.filter { it.first == LoopSound.SIREN }.map { it.second }
+        assertEquals(listOf(true, false), siren)                 // مرة واحدة فقط، لا تكرار كل إطار
+        val engine = l.events.filter { it.first == LoopSound.ENGINE }
+        assertTrue(engine.first().second); assertFalse(engine.last().second)
+        assertTrue(engine.size < 40)                             // طبقة المحرك لا تُرسل كل إطار
+    }
+
+    @Test fun pausingStopsTheLoops_andResumeRestartsThem() {
+        val env = Env(); val e = env.engine(); val l = Loops(); e.listener = l
+        e.setPoliceMode(true)
+        e.brain.x = 300f; e.brain.y = 300f; e.squad.place(300f, 300f)
+        advanceEngine(e, 2.5f)                                    // أثناء مجيء السيارة
+        assertTrue(l.events.any { it.first == LoopSound.SIREN && it.second })
+        e.stopAudio()
+        assertFalse(l.events.last { it.first == LoopSound.SIREN }.second)
+        advanceEngine(e, 0.1f)                                    // عند الاستئناف تُستعاد إن بقيت المطاردة
+        assertTrue(l.events.last { it.first == LoopSound.SIREN }.second)
     }
 }

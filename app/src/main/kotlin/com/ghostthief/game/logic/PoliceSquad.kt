@@ -33,6 +33,12 @@ class PoliceSquad(@Suppress("unused") private val rnd: Random = Random.Default) 
     var moving = false
         private set
     var speedPx = 260f
+    /** 0..1: نسبة السرعة الحالية (يبطؤ الشرطي قرب الهدف) — تُستخدم لاختيار المشي أو الركض. */
+    var speedRatio = 0f
+        private set
+    /** سرعة السيارة بالبكسل/ثانية (للتحكم بصوت المحرك). */
+    var carSpeed = 0f
+        private set
 
     // السيارة
     var cx = -500f
@@ -60,6 +66,12 @@ class PoliceSquad(@Suppress("unused") private val rnd: Random = Random.Default) 
     /** true لمرة واحدة عند وصول السيارة إلى السجن (يُستهلك بـ [takeDropped]). */
     private var dropped = false
     fun takeDropped(): Boolean { val d = dropped; dropped = false; return d }
+
+    private var hasObstacle = false
+    private var obL = 0f; private var obT = 0f; private var obR = 0f; private var obB = 0f
+    /** مستطيل ممنوع على الشرطي (السجن) حتى لا يتداخل معه. */
+    fun setObstacle(l: Float, t: Float, r: Float, b: Float) { hasObstacle = true; obL = l; obT = t; obR = r; obB = b }
+    fun clearObstacle() { hasObstacle = false }
 
     private var arenaW = 800f
     private var arenaH = 600f
@@ -108,6 +120,7 @@ class PoliceSquad(@Suppress("unused") private val rnd: Random = Random.Default) 
         val d = dt.coerceIn(0f, 0.1f)
         stageTime += d
         lightsClock += d
+        val prevCx = cx; val prevCy = cy
         when (stage) {
             PoliceStage.PATROL, PoliceStage.CAR_LEAVING -> {
                 walkOfficer(d)
@@ -155,6 +168,11 @@ class PoliceSquad(@Suppress("unused") private val rnd: Random = Random.Default) 
                 if (stageTime >= 1.2f) { enter(PoliceStage.CAR_LEAVING) }
             }
         }
+        finishFrame(d, prevCx, prevCy)
+    }
+
+    private fun finishFrame(d: Float, prevCx: Float, prevCy: Float) {
+        carSpeed = if (carVisible && d > 0f) hypot(cx - prevCx, cy - prevCy) / d else 0f
     }
 
     private fun startCar() {
@@ -174,15 +192,30 @@ class PoliceSquad(@Suppress("unused") private val rnd: Random = Random.Default) 
     }
 
     private fun walkOfficer(d: Float) {
-        if (!hasTarget) { moving = false; return }
+        if (!hasTarget) { moving = false; speedRatio = 0f; return }
         val dx = tx - ox; val dy = ty - oy
         val dist = hypot(dx, dy)
-        if (dist < 8f) { hasTarget = false; moving = false; return }
-        val step = min(dist, speedPx * d)
+        if (dist < 8f) { hasTarget = false; moving = false; speedRatio = 0f; return }
+        val arrive = (dist / 90f).coerceIn(0.25f, 1f) // يبطؤ عند الاقتراب من الهدف
+        speedRatio = arrive
+        val step = min(dist, speedPx * arrive * d)
         ox += dx / dist * step; oy += dy / dist * step
         if (abs(dx) > 3f) ofacing = if (dx > 0) 1 else -1
-        walkClock += d
+        walkClock += d * (0.6f + 0.8f * arrive) // وتيرة الخطوات تتبع السرعة
         moving = true
+        clampOfficer()
+        pushOutOfObstacle()
+    }
+
+    private fun pushOutOfObstacle() {
+        if (!hasObstacle || ox < obL || ox > obR || oy < obT || oy > obB) return
+        val dl = ox - obL; val dr = obR - ox; val dtp = oy - obT; val db = obB - oy
+        when (minOf(minOf(dl, dr), minOf(dtp, db))) {
+            dl -> ox = obL - 2f
+            dr -> ox = obR + 2f
+            dtp -> oy = obT - 2f
+            else -> oy = obB + 2f
+        }
         clampOfficer()
     }
 

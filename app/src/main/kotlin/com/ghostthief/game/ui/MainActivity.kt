@@ -143,7 +143,7 @@ class MainActivity : BaseActivity() {
             "twenty_five_catches" to R.string.ach_25, "hundred_catches" to R.string.ach_100,
             "circle_master" to R.string.ach_circle, "first_rescue" to R.string.ach_first_rescue,
             "large_rescue" to R.string.ach_large_rescue, "sharp_eyes" to R.string.ach_sharp_eyes
-        ).map { (id, res) -> (if (id in have) "✅ " else "🔒 ") + getString(res) }
+        ).map { (id, res) -> (if (id in have) "✓ " else "○ ") + getString(res) }
         AlertDialog.Builder(this)
             .setTitle(R.string.achievements)
             .setItems(rows.toTypedArray(), null)

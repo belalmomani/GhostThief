@@ -17,9 +17,14 @@ interface GameListener {
     fun onSound(effect: SoundEffect)
     /** رسائل السرقة التي تحتوي اسم الغنيمة. */
     fun onLootMessage(msg: GameMessage, name: String, points: Int = 0) {}
+    /** تشغيل/إيقاف صوت متكرر (يُستدعى عند تغيّر الحالة فقط، وليس كل إطار). rate = سرعة التشغيل (طبقة المحرك). */
+    fun onLoop(sound: LoopSound, on: Boolean, rate: Float = 1f) {}
 }
 
-enum class SoundEffect { POP, CATCH, FAIL, ESCAPE, OUCH, CLANG, DING, SIREN }
+enum class SoundEffect { POP, CATCH, FAIL, ESCAPE, OUCH, CLANG, DING }
+
+/** أصوات متكررة (حلقات): الصفارة ومحرك السيارة. */
+enum class LoopSound { SIREN, ENGINE }
 
 /** مكان اختباء في وضع البحث. الاسم يأتي من مجلد اختاره المستخدم (يبقى في الذاكرة فقط). */
 class SeekSpot(val x: Float, val y: Float, val name: String) { var wrong = false }
@@ -120,7 +125,7 @@ class GameEngine(
         settings.policeMode = on
         policeMode = on
         brain.hideChance = if (policeActive) 0.2f else 0.45f
-        if (!on) { squad.reset(); brain.clearThreat(); brain.cancelArrest() }
+        if (!on) { squad.reset(); brain.clearThreat(); brain.cancelArrest(); stopAudio() }
     }
 
     fun setArena(w: Float, h: Float, density: Float) {
@@ -134,7 +139,7 @@ class GameEngine(
         jailMargin = 8f * density
         brain.minY = topInset
         brain.setArena(w, h - bottomInset)
-        squad.carWidth = thiefRadius * 4.2f
+        squad.carWidth = thiefRadius * 4.1f
         squad.setArena(w, h - bottomInset, topInset)
         if (!policePlaced) { squad.place(w * 0.2f, h * 0.7f); policePlaced = true }
         relayoutJail()
@@ -215,15 +220,47 @@ class GameEngine(
         return dx to dy
     }
 
+    // حالة الأصوات المتكررة (لمنع إعادة التشغيل في كل إطار)
+    private var sirenOn = false
+    private var engineOn = false
+    private var engineRate = 0f
+
+    /** يوقف الصفارة والمحرك (عند الإيقاف المؤقت أو إطفاء الوضع). */
+    fun stopAudio() {
+        if (sirenOn) { sirenOn = false; listener?.onLoop(LoopSound.SIREN, false) }
+        if (engineOn) { engineOn = false; engineRate = 0f; listener?.onLoop(LoopSound.ENGINE, false) }
+    }
+
+    private fun updatePoliceAudio() {
+        val st = squad.stage
+        // الصفارة أثناء المطاردة فقط: وصول السيارة والصعود والقيادة إلى السجن
+        val chase = st == PoliceStage.CAR_COMING || st == PoliceStage.BOARDING || st == PoliceStage.DRIVING
+        if (chase != sirenOn) { sirenOn = chase; listener?.onLoop(LoopSound.SIREN, chase) }
+        val car = squad.carVisible
+        if (car != engineOn) {
+            engineOn = car; engineRate = 0f
+            if (!car) listener?.onLoop(LoopSound.ENGINE, false)
+        }
+        if (engineOn) { // طبقة المحرك تتبع السرعة: تسارع ثم تباطؤ ثم توقف
+            val rate = 0.75f + 0.85f * minOf(1f, squad.carSpeed / 520f)
+            if (kotlin.math.abs(rate - engineRate) > 0.05f) { engineRate = rate; listener?.onLoop(LoopSound.ENGINE, true, rate) }
+        }
+    }
+
     private fun updatePolice(dt: Float) {
         squad.update(dt)
+        if (settings.jailVisible) { // لا يتداخل الشرطي مع السجن
+            val m = thiefRadius * 0.5f
+            squad.setObstacle(jailL - m, jailT - m, jailL + jailW + m, jailT + jailH + m)
+        } else squad.clearObstacle()
+        updatePoliceAudio()
         val patrol = squad.stage == PoliceStage.PATROL
         val near = hypot(squad.ox - brain.x, squad.oy - brain.y)
         // الحرامي يهرب من الشرطي إذا اقترب
         if (patrol && near < thiefRadius * 5f && brain.alpha > 0.5f) brain.setThreat(squad.ox, squad.oy) else brain.clearThreat()
         // اللمس = قبض
         if (patrol && brain.alpha > 0.5f && brain.isCatchable() && brain.state != ThiefState.HELD &&
-            near < thiefRadius * 1.3f && !isJailed()) startArrest()
+            near < thiefRadius * 1.2f && !isJailed()) startArrest()
         if (brain.state == ThiefState.ARRESTED) brain.setArrestPose(squad.thiefX, squad.thiefY, squad.thiefScale)
         if (squad.takeDropped()) beginCapture(CaptureSource.POLICE)
     }
@@ -234,7 +271,6 @@ class GameEngine(
         val (dx, dy) = carDestination()
         squad.arrest(brain.x, brain.y, dx, dy)
         listener?.onMessage(GameMessage.POLICE_ARREST)
-        listener?.onSound(SoundEffect.SIREN)
     }
 
     private fun awardRescue() {
