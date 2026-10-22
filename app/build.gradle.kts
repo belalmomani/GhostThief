@@ -104,8 +104,18 @@ dependencies {
     implementation("com.google.firebase:firebase-auth")
     implementation("com.google.firebase:firebase-firestore")
 
-    // Start.io — فقط في نكهة ads. راجع وثائق Start.io: com.startapp:inapp-sdk:5.+
-    "adsImplementation"("com.startapp:inapp-sdk:5.+")
+    // Start.io — فقط في نكهة ads. الإصدار مثبّت (وليس 5.+) حتى لا يتغير مع كل بناء.
+    "adsImplementation"("com.startapp:inapp-sdk:5.3.1")
 
     testImplementation("junit:junit:4.13.2")
+}
+
+// مكتبة Start.io (أو غيرها) قد تجلب kotlin-stdlib أحدث (مثل 2.4.x) من مترجم Kotlin 1.9.24 فيفشل البناء
+// بخطأ "compiled with an incompatible version of Kotlin". نثبّت stdlib على إصدار المترجم نفسه.
+configurations.all {
+    resolutionStrategy.eachDependency {
+        if (requested.group == "org.jetbrains.kotlin" && requested.name.startsWith("kotlin-stdlib")) {
+            useVersion("1.9.24")
+        }
+    }
 }

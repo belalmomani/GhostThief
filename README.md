@@ -63,6 +63,10 @@ app/src/main/kotlin/com/ghostthief/game/
 - نسخة `WITH-ADS` أعلى رقماً قليلاً من `NOADS` في نفس البناء، فتُثبَّت فوقها كتحديث.
 - هذا المفتاح للتجربة فقط. للنشر على Google Play استخدم مفتاحك الخاص عبر الأسرار (قسم التوقيع بمفتاحك).
 
+## إصلاح بناء نسخة الإعلانات (Kotlin stdlib)
+- خطأ `compiled with an incompatible version of Kotlin ... 2.4.0` سببه أن مكتبة Start.io جلبت `kotlin-stdlib 2.4.21` بينما مترجم المشروع Kotlin 1.9.24. صار الإصدار **مثبتاً على 5.3.1** (بدل `5.+`) و`kotlin-stdlib` مثبّت على 1.9.24 في `app/build.gradle.kts`.
+- نسخة `noads` لا تتأثر. إن عملت `ads` بنجاح فجرّبها على الهاتف: ثبّتُ stdlib أقدم مما بُنيت به المكتبة، وإن ظهر تعطل عند تشغيل الإعلانات فأرسل لي السجن.
+
 ## ملاحظات مهمة بعد التجربة الأولى
 - **الإعلانات «غير متوفرة»:** لأنك ثبّتَ APK نكهة `noads` (`GhostThief-NOADS-apk`) وهي بلا أي SDK إعلاني. ثبّت `GhostThief-WITH-ADS-apk` (من Artifacts). بناء debug يعرض إعلانات اختبار دائماً.
 - **المزامنة:** صارت مفعّلة افتراضياً عند وجود `google-services.json`، وتعرض الإعدادات **سبب** الفشل إن حدث. أسباب شائعة: لم تفعّل Anonymous في Authentication، أو لم تنشئ Firestore، أو لم تنشر `firestore.rules`، أو ثبّتَ APK بُني قبل إضافة الملف.
