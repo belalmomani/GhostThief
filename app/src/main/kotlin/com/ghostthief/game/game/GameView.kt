@@ -373,6 +373,15 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
         p.alpha = 255
     }
 
+    /** مؤثر مرسوم (سحابة/نجوم/استفهام) بحجم معيّن وزاوية دوران. */
+    private fun drawFx(c: Canvas, bmp: Bitmap, cx: Float, cy: Float, size: Float, rotation: Float, alpha: Float) {
+        val s = size / bmp.width
+        p.alpha = (alpha.coerceIn(0f, 1f) * 255).toInt()
+        c.save(); c.translate(cx, cy); c.rotate(rotation); c.scale(s, s)
+        c.drawBitmap(bmp, -bmp.width / 2f, -bmp.height / 2f, p)
+        c.restore(); p.alpha = 255
+    }
+
     private fun bob(t: Float) = (sin(t * 6f) * 2f * density)
 
     private fun drawFolder(c: Canvas, sp: Sprites, x: Float, y: Float, variant: Int, a: Float) {
