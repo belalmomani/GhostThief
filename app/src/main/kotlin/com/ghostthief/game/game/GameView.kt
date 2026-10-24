@@ -27,13 +27,13 @@ import kotlin.random.Random
 class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? = null) :
     View(context, attrs), Choreographer.FrameCallback, GameListener {
 
-    enum class Role { FULL, ACTOR, JAIL }
+    enum class Role { FULL, ACTOR, JAIL, OFFICER, CAR }
     var role = Role.FULL
 
     var engine: GameEngine? = null
         set(value) {
             field = value
-            if (role != Role.JAIL) value?.listener = this
+            if (ownsListener()) value?.listener = this
             if (role == Role.FULL) sizeEngine()
         }
 
@@ -43,6 +43,9 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
     var onFrame: (() -> Unit)? = null
     var onToast: ((String) -> Unit)? = null
     var onCloseRequested: (() -> Unit)? = null
+    /** زر الشرطي على نافذة السجن (الوضع العائم): تشغيل/إيقاف وضع الشرطي. */
+    var onPoliceToggle: (() -> Unit)? = null
+    private fun ownsListener() = role == Role.FULL || role == Role.ACTOR
     var onJailDrag: ((Float, Float) -> Unit)? = null
     var onJailDragEnd: (() -> Unit)? = null
 
@@ -79,8 +82,8 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
 
     fun start() {
         if (running) return
-        if (sprites == null) sprites = Sprites(context)
-        if (fx == null && role != Role.JAIL) engine?.let { fx = SoundFx(context, it.settings) }
+        if (sprites == null) sprites = Sprites.acquire(context)
+        if (fx == null && ownsListener()) engine?.let { fx = SoundFx(context, it.settings) }
         running = true
         engine?.lastTickMs = 0L
         engine?.paused = false
@@ -98,7 +101,8 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
 
     override fun onAttachedToWindow() { super.onAttachedToWindow(); if (visibility == VISIBLE) start() }
     override fun onDetachedFromWindow() {
-        pause(); fx?.release(); fx = null; sprites = null
+        pause(); fx?.release(); fx = null
+        if (sprites != null) { sprites = null; Sprites.release() }
         super.onDetachedFromWindow()
     }
     override fun onVisibilityChanged(changedView: View, visibility: Int) {
@@ -232,6 +236,17 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
                 drawJail(c, e, sp)
                 c.restore()
                 drawChip(c, e)
+                drawPoliceChip(c, e)
+            }
+            Role.OFFICER -> if (e.policeActive && e.squad.officerVisible) {
+                c.save(); c.translate(-originX, -originY)
+                drawOfficer(c, e.squad, sp)
+                c.restore()
+            }
+            Role.CAR -> if (e.policeActive && e.squad.carVisible) {
+                c.save(); c.translate(-originX, -originY)
+                drawCar(c, e.squad, sp)
+                c.restore()
             }
         }
     }
@@ -564,6 +579,21 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
         p.style = Paint.Style.FILL
     }
 
+    /** زر تشغيل/إيقاف الشرطي (درع) على الزاوية العلوية اليسرى للسجن. أزرق = يعمل، رمادي = متوقف. */
+    private fun drawPoliceChip(c: Canvas, e: GameEngine) {
+        val cx = e.jailLeft() - originX
+        val cy = e.jailTop() - originY
+        val r = 9f * density
+        p.style = Paint.Style.FILL
+        p.color = if (e.policeActive) Color.argb(235, 30, 90, 200) else Color.argb(215, 120, 130, 145)
+        c.drawCircle(cx, cy, r, p)
+        val path = Path().apply {
+            moveTo(cx - r * 0.5f, cy - r * 0.5f); lineTo(cx + r * 0.5f, cy - r * 0.5f)
+            lineTo(cx + r * 0.5f, cy + r * 0.05f); lineTo(cx, cy + r * 0.62f); lineTo(cx - r * 0.5f, cy + r * 0.05f); close()
+        }
+        p.color = Color.WHITE; c.drawPath(path, p)
+    }
+
     private fun drawTrail(c: Canvas, e: GameEngine) {
         if (!e.settings.effectsEnabled) return
         val pts = e.fingerPath
@@ -594,6 +624,7 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
     override fun onTouchEvent(ev: MotionEvent): Boolean {
         val e = engine ?: return false
         if (role == Role.JAIL) return jailTouch(ev, e)
+        if (role == Role.CAR) return false
         // في النافذة العائمة نستخدم إحداثيات الشاشة المطلقة (الساحة = الشاشة)
         val x = if (role == Role.FULL) ev.x else ev.rawX
         val y = if (role == Role.FULL) ev.y else ev.rawY
@@ -611,6 +642,8 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
             MotionEvent.ACTION_DOWN -> {
                 val cx = e.jailLeft() + e.jailW - originX; val cy = e.jailTop() - originY
                 if (hypot((ev.x - cx).toDouble(), (ev.y - cy).toDouble()) <= jailPad * 1.7) { onCloseRequested?.invoke(); return true }
+                val px = e.jailLeft() - originX
+                if (hypot((ev.x - px).toDouble(), (ev.y - cy).toDouble()) <= jailPad * 1.7) { onPoliceToggle?.invoke(); return true }
                 jailDragging = true; lastRawX = ev.rawX; lastRawY = ev.rawY
             }
             MotionEvent.ACTION_MOVE -> if (jailDragging) {

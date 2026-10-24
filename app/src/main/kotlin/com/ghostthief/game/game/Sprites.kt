@@ -33,4 +33,21 @@ class Sprites(context: Context) {
 
     /** ارتفاع إطار الركض المرجعي لتوحيد مقياس كل حالات الشخصية. */
     val refHeight: Float get() = run[0].height.toFloat()
+
+    companion object {
+        @Volatile private var instance: Sprites? = null
+        private var refs = 0
+
+        /** نسخة واحدة مشتركة بين كل العروض (نوافذ الوضع العائم الأربع) لتوفير الذاكرة. */
+        @Synchronized fun acquire(context: Context): Sprites {
+            val s = instance ?: Sprites(context).also { instance = it }
+            refs++
+            return s
+        }
+
+        @Synchronized fun release() {
+            refs--
+            if (refs <= 0) { refs = 0; instance = null }
+        }
+    }
 }

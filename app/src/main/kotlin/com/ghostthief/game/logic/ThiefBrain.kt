@@ -77,6 +77,13 @@ class ThiefBrain(
     fun setThreat(tx: Float, ty: Float) { threatened = true; threatX = tx; threatY = ty }
     fun clearThreat() { threatened = false }
 
+    /** نقطة (موضع الشرطي) يتجنب الظهور بالقرب منها بعد الاختباء. avoidDist = 0 تعطّل التجنب. */
+    private var avoidX = 0f
+    private var avoidY = 0f
+    private var avoidDist = 0f
+    fun setAvoid(ax: Float, ay: Float, dist: Float) { avoidX = ax; avoidY = ay; avoidDist = dist }
+    fun clearAvoid() { avoidDist = 0f }
+
     /** عند true يبقى الحرامي مختبئاً حتى يجده اللاعب (وضع البحث). */
     var holdHidden = false
 
@@ -145,6 +152,8 @@ class ThiefBrain(
         val d = dt.coerceIn(0f, 0.1f)
         stateTime += d
         arrivedInJail = false
+        // الشرطي قريب ويطارده: يلغي السرقة ويهرب (لا يكمل التلفّت عند الأيقونة)
+        if (threatened && (state == ThiefState.HEIST_GO || state == ThiefState.SNEAK)) { abortHeist(); startRun() }
         when (state) {
             ThiefState.RUN -> {
                 if (threatened) { // يهرب بعيداً عن الشرطي
@@ -193,8 +202,7 @@ class ThiefBrain(
                 alpha = 0f
                 hideFolderAlpha = 1f
                 if (stateTime >= stateDuration && !holdHidden) {
-                    x = randomBetween(margin(), arenaW - margin())
-                    y = randomBetween(minY + margin(), arenaH - margin())
+                    pickReappearSpot()
                     facing = if (x < arenaW / 2) 1 else -1
                     enter(ThiefState.FADE_IN, 0.7f)
                 }
@@ -268,6 +276,19 @@ class ThiefBrain(
                 }
             }
         }
+    }
+
+    /** مكان الظهور بعد الاختباء: عشوائي، لكن بعيد عن الشرطي (وإلا يُقبض عليه فور ظهوره). */
+    private fun pickReappearSpot() {
+        var bestX = x; var bestY = y; var bestD = -1f
+        repeat(10) {
+            val cx = randomBetween(margin(), arenaW - margin())
+            val cy = randomBetween(minY + margin(), arenaH - margin())
+            val dist = if (avoidDist > 0f) hypot(cx - avoidX, cy - avoidY) else Float.MAX_VALUE
+            if (dist > bestD) { bestD = dist; bestX = cx; bestY = cy }
+            if (dist >= avoidDist) { x = cx; y = cy; return }
+        }
+        x = bestX; y = bestY // لم نجد مكاناً بعيداً كفاية: نأخذ الأبعد
     }
 
     private fun updateHeistGo(d: Float) {

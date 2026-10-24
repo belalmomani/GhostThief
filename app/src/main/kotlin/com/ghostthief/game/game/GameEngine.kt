@@ -106,7 +106,7 @@ class GameEngine(
     // وضع الشرطي: الطفل يحرّك الشرطي بإصبعه للقبض على الحرامي ثم تأخذهما سيارة الشرطة إلى السجن
     val squad = PoliceSquad(rnd)
     var policeMode = false; private set
-    val policeActive: Boolean get() = policeMode && !compact
+    val policeActive: Boolean get() = policeMode
     private var policeDown = false
     private var policePlaced = false
 
@@ -150,7 +150,7 @@ class GameEngine(
         jailH = minOf(72f * density, h * 0.36f) * maxOf(sizeFactor, 0.8f)
         jailW = jailH * 0.78f
         brain.ropeLength = thiefRadius * 1.3f
-        jailMargin = 8f * density
+        jailMargin = (if (compact) 14f else 8f) * density // في الوضع العائم: هامش يتسع لأزرار النافذة
         brain.minY = topInset
         brain.setArena(w, h - bottomInset)
         squad.carWidth = thiefRadius * 4.1f
@@ -272,9 +272,11 @@ class GameEngine(
         val patrol = squad.stage == PoliceStage.PATROL
         val near = hypot(squad.ox - brain.x, squad.oy - brain.y)
         // الحرامي يهرب من الشرطي إذا اقترب
-        if (patrol && near < thiefRadius * 5f && brain.alpha > 0.5f) brain.setThreat(squad.ox, squad.oy) else brain.clearThreat()
-        // اللمس = قبض
-        if (patrol && brain.alpha > 0.5f && brain.isCatchable() && brain.state != ThiefState.HELD &&
+        // الحرامي يهرب من الشرطي ويتجنب الظهور بقربه
+        if (patrol && near < thiefRadius * 6f && brain.alpha > 0.5f) brain.setThreat(squad.ox, squad.oy) else brain.clearThreat()
+        if (patrol) brain.setAvoid(squad.ox, squad.oy, thiefRadius * 6f) else brain.clearAvoid()
+        // القبض يحتاج شرطياً يتحرك (يطارد). الحرامي الذي يمرّ بجانب شرطي واقف لا يُقبض عليه.
+        if (patrol && squad.moving && brain.alpha > 0.5f && brain.isCatchable() && brain.state != ThiefState.HELD &&
             near < thiefRadius * 1.2f && !isJailed()) startArrest()
         if (brain.state == ThiefState.ARRESTED) brain.setArrestPose(squad.thiefX, squad.thiefY, squad.thiefScale)
         if (squad.takeDropped()) beginCapture(CaptureSource.POLICE)

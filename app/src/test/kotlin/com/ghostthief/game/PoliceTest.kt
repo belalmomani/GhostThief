@@ -1,5 +1,6 @@
 package com.ghostthief.game
 
+import com.ghostthief.game.game.GameEngine
 import com.ghostthief.game.game.GameListener
 import com.ghostthief.game.game.GameMessage
 import com.ghostthief.game.game.LoopSound
@@ -13,6 +14,9 @@ import org.junit.Test
 import kotlin.random.Random
 
 class PoliceTest {
+    /** الشرطي يطارد (يتحرك): القبض يحتاج حركة. */
+    private fun chase(e: GameEngine) { e.squad.moveTo(e.squad.ox + 250f, e.squad.oy) }
+
     private fun squad() = PoliceSquad(Random(1)).also { it.setArena(800f, 600f, 0f); it.carWidth = 200f }
 
     @Test fun officerWalksTowardTheFinger() {
@@ -56,7 +60,7 @@ class PoliceTest {
 
     @Test fun policeMode_officerCatches_carDeliversThief_scoreCountedOnce() {
         val env = Env(); val e = env.engine(); e.setPoliceMode(true)
-        e.brain.x = 300f; e.brain.y = 300f; e.squad.place(300f, 300f)
+        e.brain.x = 300f; e.brain.y = 300f; e.squad.place(300f, 300f); chase(e)
         advanceEngine(e, 0.1f)
         assertEquals(ThiefState.ARRESTED, e.brain.state)
         advanceEngine(e, 15f)
@@ -67,7 +71,7 @@ class PoliceTest {
 
     @Test fun turningPoliceModeOff_cancelsOperation() {
         val env = Env(); val e = env.engine(); e.setPoliceMode(true)
-        e.brain.x = 300f; e.brain.y = 300f; e.squad.place(300f, 300f)
+        e.brain.x = 300f; e.brain.y = 300f; e.squad.place(300f, 300f); chase(e)
         advanceEngine(e, 0.1f); assertEquals(ThiefState.ARRESTED, e.brain.state)
         e.setPoliceMode(false)
         assertEquals(ThiefState.RUN, e.brain.state); assertFalse(e.squad.carVisible)
@@ -99,7 +103,7 @@ class PoliceTest {
     @Test fun sirenAndEngine_startOnce_andStopWhenChaseEnds() {
         val env = Env(); val e = env.engine(); val l = Loops(); e.listener = l
         e.setPoliceMode(true)
-        e.brain.x = 300f; e.brain.y = 300f; e.squad.place(300f, 300f)
+        e.brain.x = 300f; e.brain.y = 300f; e.squad.place(300f, 300f); chase(e)
         advanceEngine(e, 20f)
         val siren = l.events.filter { it.first == LoopSound.SIREN }.map { it.second }
         assertEquals(listOf(true, false), siren)                 // مرة واحدة فقط، لا تكرار كل إطار
@@ -111,12 +115,46 @@ class PoliceTest {
     @Test fun pausingStopsTheLoops_andResumeRestartsThem() {
         val env = Env(); val e = env.engine(); val l = Loops(); e.listener = l
         e.setPoliceMode(true)
-        e.brain.x = 300f; e.brain.y = 300f; e.squad.place(300f, 300f)
+        e.brain.x = 300f; e.brain.y = 300f; e.squad.place(300f, 300f); chase(e)
         advanceEngine(e, 2.5f)                                    // أثناء مجيء السيارة
         assertTrue(l.events.any { it.first == LoopSound.SIREN && it.second })
         e.stopAudio()
         assertFalse(l.events.last { it.first == LoopSound.SIREN }.second)
         advanceEngine(e, 0.1f)                                    // عند الاستئناف تُستعاد إن بقيت المطاردة
         assertTrue(l.events.last { it.first == LoopSound.SIREN }.second)
+    }
+
+    @Test fun stationaryOfficer_doesNotArrestAThiefThatWalksBy() {
+        val env = Env(); val e = env.engine(); e.setPoliceMode(true)
+        e.brain.x = 300f; e.brain.y = 300f; e.squad.place(300f, 300f)   // الشرطي واقف
+        advanceEngine(e, 0.3f)
+        assertTrue(e.brain.state != ThiefState.ARRESTED)
+        assertEquals(0, env.repo.load().captures)
+    }
+
+    @Test fun thiefReappearsAwayFromTheOfficer() {
+        val b = ThiefBrain(Random(7)).also { it.setArena(800f, 600f); it.x = 400f; it.y = 300f }
+        b.setAvoid(400f, 300f, 300f)
+        b.forceHide()
+        assertTrue(advanceUntil(b, ThiefState.FADE_IN, 6f))
+        assertTrue(Math.hypot((b.x - 400f).toDouble(), (b.y - 300f).toDouble()) >= 150.0)
+    }
+
+    @Test fun officerNearby_makesThiefAbandonTheTheft() {
+        val b = ThiefBrain(Random(7)).also { it.setArena(800f, 600f); it.x = 100f; it.y = 300f }
+        b.beginHeist(300f, 300f, com.ghostthief.game.logic.LootKind.SMALL)
+        assertTrue(advanceUntil(b, ThiefState.SNEAK, 5f))
+        b.setThreat(250f, 300f); b.update(0.05f)
+        assertEquals(ThiefState.RUN, b.state)
+        assertEquals(com.ghostthief.game.logic.LootEvent.ABORTED, b.takeLootEvent())
+    }
+
+    @Test fun policeModeWorksInTheFloatingLayoutToo() {
+        val env = Env(); val e = env.engine(); e.compact = true; e.setPoliceMode(true)
+        assertTrue(e.policeActive)
+        e.setArena(1080f, 2000f, 2f)
+        e.brain.x = 500f; e.brain.y = 1000f; e.squad.place(500f, 1000f); chase(e)
+        advanceEngine(e, 0.1f)
+        assertEquals(ThiefState.ARRESTED, e.brain.state)
     }
 }

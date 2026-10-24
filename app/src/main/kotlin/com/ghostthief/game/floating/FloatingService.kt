@@ -47,6 +47,15 @@ class FloatingService : Service() {
     private var screenW = 0
     private var screenH = 0
     private var actorShown = true
+    private var officerView: GameView? = null
+    private var carView: GameView? = null
+    private var officerLp: WindowManager.LayoutParams? = null
+    private var carLp: WindowManager.LayoutParams? = null
+    private var officerSize = 0
+    private var carW = 0
+    private var carH = 0
+    private var officerShown = false
+    private var carShown = false
     private var jailShown = true
     private val handler = Handler(Looper.getMainLooper())
     /** يخفي النافذتين تلقائياً عندما تكون واجهة اللعبة نفسها ظاهرة، ويعيدهما عند الخروج منها. */
@@ -127,7 +136,7 @@ class FloatingService : Service() {
             role = GameView.Role.ACTOR
             engine = eng
             originX = aLp.x.toFloat(); originY = aLp.y.toFloat()
-            onFrame = { followThief() }
+            onFrame = { followAll() }
             onToast = { msg -> try { Toast.makeText(this@FloatingService, msg, Toast.LENGTH_SHORT).show() } catch (_: Throwable) {} }
         }
 
@@ -146,6 +155,12 @@ class FloatingService : Service() {
             engine = eng
             originX = jLp.x.toFloat(); originY = jLp.y.toFloat()
             onCloseRequested = { shutdown() }
+            onFrame = { followAll() }
+            onPoliceToggle = {
+                eng.setPoliceMode(!eng.policeMode)
+                try { Toast.makeText(this@FloatingService, if (eng.policeMode) R.string.police_float_on else R.string.police_float_off, Toast.LENGTH_SHORT).show() } catch (_: Throwable) {}
+                applyVisibility()
+            }
             onJailDrag = { dx, dy ->
                 jLp.x = (jLp.x + dx.toInt()).coerceIn(0, (screenW - jw).coerceAtLeast(0))
                 jLp.y = (jLp.y + dy.toInt()).coerceIn(jailMinY, jailMaxY)
@@ -157,10 +172,32 @@ class FloatingService : Service() {
             onJailDragEnd = { eng.commitJailPosition() }
         }
 
+        // نافذة الشرطي (تتبعه) ونافذة سيارة الشرطة (لا تستقبل اللمس): مخفيتان حتى يُفعَّل وضع الشرطي
+        val rr = eng.thiefRadius
+        officerSize = (rr * 3.0f).toInt()
+        val oLp = overlayParams(officerSize, officerSize)
+        val ov = GameView(this).apply {
+            role = GameView.Role.OFFICER
+            engine = eng
+            visibility = View.GONE
+            onFrame = { followAll() }
+        }
+        carW = (eng.squad.carWidth * 1.2f).toInt(); carH = (eng.squad.carWidth * 0.7f).toInt()
+        val cLp = overlayParams(carW, carH).apply { flags = flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE }
+        val cv = GameView(this).apply {
+            role = GameView.Role.CAR
+            engine = eng
+            visibility = View.GONE
+            onFrame = { followAll() }
+        }
+
         try {
             wm?.addView(jv, jLp)
+            wm?.addView(cv, cLp)
             wm?.addView(av, aLp)
+            wm?.addView(ov, oLp)
             actor = av; jailView = jv; actorLp = aLp; jailLp = jLp
+            officerView = ov; carView = cv; officerLp = oLp; carLp = cLp
             suspended = AppVisibility.started > 0 // لا نظهر النافذتين فوق واجهة اللعبة نفسها
             applyVisibility()
             handler.removeCallbacks(visibilityPoll); handler.post(visibilityPoll)
@@ -169,9 +206,17 @@ class FloatingService : Service() {
         }
     }
 
-    /** تُستدعى كل إطار: النافذة الصغيرة تتبع الحرامي، وتُخفى أثناء وجوده في السجن. */
-    private fun followThief() {
+    /** تُستدعى كل إطار من أي نافذة ظاهرة: كل نافذة صغيرة تتبع شخصيتها. */
+    private fun followAll() {
         val eng = engine ?: return
+        followThief(eng)
+        followPolice(eng)
+        val showJail = eng.settings.jailVisible
+        if (showJail != jailShown) { jailShown = showJail; applyVisibility() }
+    }
+
+    /** نافذة الحرامي تتبعه وتُخفى أثناء وجوده في السجن. */
+    private fun followThief(eng: GameEngine) {
         val av = actor ?: return
         val lp = actorLp ?: return
         val b = eng.brain
@@ -185,13 +230,45 @@ class FloatingService : Service() {
             av.originX = nx.toFloat(); av.originY = ny.toFloat()
             try { wm?.updateViewLayout(av, lp) } catch (_: Throwable) {}
         }
-        val showJail = eng.settings.jailVisible
-        if (showJail != jailShown) { jailShown = showJail; applyVisibility() }
+    }
+
+    /** نافذتا الشرطي والسيارة: تظهران فقط في وضع الشرطي، وتتبعان موضع كل منهما. */
+    private fun followPolice(eng: GameEngine) {
+        val sq = eng.squad
+        val r = eng.thiefRadius
+        val offVis = eng.policeActive && sq.officerVisible
+        val carVis = eng.policeActive && sq.carVisible
+        if (offVis != officerShown) { officerShown = offVis; applyVisibility() }
+        if (carVis != carShown) { carShown = carVis; applyVisibility() }
+        if (suspended) return
+        val ov = officerView; val olp = officerLp
+        if (offVis && ov != null && olp != null) {
+            val nx = (sq.ox - officerSize / 2f).toInt().coerceIn(0, (screenW - officerSize).coerceAtLeast(0))
+            val ny = (sq.oy + r * 0.25f - officerSize / 2f).toInt().coerceIn(0, (screenH - officerSize).coerceAtLeast(0))
+            if (nx != olp.x || ny != olp.y) {
+                olp.x = nx; olp.y = ny
+                ov.originX = nx.toFloat(); ov.originY = ny.toFloat()
+                try { wm?.updateViewLayout(ov, olp) } catch (_: Throwable) {}
+            }
+        }
+        val cv = carView; val clp = carLp
+        if (carVis && cv != null && clp != null) {
+            val groundY = sq.cy + r * 1.19f
+            val nx = (sq.cx - carW / 2f).toInt().coerceIn(0, (screenW - carW).coerceAtLeast(0))
+            val ny = (groundY - sq.carWidth * 0.23f - carH / 2f).toInt().coerceIn(0, (screenH - carH).coerceAtLeast(0))
+            if (nx != clp.x || ny != clp.y) {
+                clp.x = nx; clp.y = ny
+                cv.originX = nx.toFloat(); cv.originY = ny.toFloat()
+                try { wm?.updateViewLayout(cv, clp) } catch (_: Throwable) {}
+            }
+        }
     }
 
     private fun applyVisibility() {
         actor?.visibility = if (suspended || !actorShown) View.GONE else View.VISIBLE
         jailView?.visibility = if (suspended || !jailShown) View.GONE else View.VISIBLE
+        officerView?.visibility = if (suspended || !officerShown) View.GONE else View.VISIBLE
+        carView?.visibility = if (suspended || !carShown) View.GONE else View.VISIBLE
     }
 
     private fun dimenPx(name: String): Int {
@@ -203,7 +280,9 @@ class FloatingService : Service() {
         handler.removeCallbacks(visibilityPoll)
         actor?.let { try { wm?.removeView(it) } catch (_: Throwable) {} }
         jailView?.let { try { wm?.removeView(it) } catch (_: Throwable) {} }
-        actor = null; jailView = null
+        officerView?.let { try { wm?.removeView(it) } catch (_: Throwable) {} }
+        carView?.let { try { wm?.removeView(it) } catch (_: Throwable) {} }
+        actor = null; jailView = null; officerView = null; carView = null
     }
 
     private fun shutdown() {

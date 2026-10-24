@@ -154,4 +154,6 @@
     <string name="msg_stolen">سرق الحرامي «%1$s»! أمسكه لتستعيدها</string>
     <string name="msg_recovered">استعدتَ كل المسروقات! +%1$d</string>
     <string name="hud_stolen">في الكيس: %1$d</string>
+    <string name="police_float_on">وضع الشرطي: حرّك الشرطي بإصبعك للقبض على الحرامي</string>
+    <string name="police_float_off">تم إيقاف الشرطي</string>
 </resources>

@@ -247,7 +247,7 @@ class EngineTest {
         val env = Env(); env.settings.heistEnabled = true
         val e = env.engine(); e.loots = listOf(loot("Chat", 5))
         startHeistNearIcon(e); advanceEngine(e, 3.0f); assertEquals(1, e.stolenCount)
-        e.setPoliceMode(true); e.squad.place(e.brain.x, e.brain.y)
+        e.setPoliceMode(true); e.squad.place(e.brain.x, e.brain.y); e.squad.moveTo(e.squad.ox + 250f, e.squad.oy)
         advanceEngine(e, 0.1f)
         assertEquals(0, e.stolenCount)
     }
