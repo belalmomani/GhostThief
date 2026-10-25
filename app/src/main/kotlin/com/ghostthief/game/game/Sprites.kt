@@ -34,6 +34,12 @@ class Sprites(context: Context) {
     /** ارتفاع إطار الركض المرجعي لتوحيد مقياس كل حالات الشخصية. */
     val refHeight: Float get() = run[0].height.toFloat()
 
+    private val vehicleCache = HashMap<String, Bitmap>()
+
+    /** صورة المركبة (تُحمَّل عند الطلب فقط لتوفير الذاكرة). */
+    @Synchronized fun vehicleBitmap(spec: VehicleSpec): Bitmap =
+        if (spec.id == "default") policeCar else vehicleCache.getOrPut(spec.id) { load(spec.drawable) }
+
     companion object {
         @Volatile private var instance: Sprites? = null
         private var refs = 0

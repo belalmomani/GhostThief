@@ -10,7 +10,7 @@ service cloud.firestore {
         && request.resource.data.circleCaptures is int && request.resource.data.circleCaptures >= 0
         && request.resource.data.points is int && request.resource.data.points >= 0 && request.resource.data.points < 1000000000
         && request.resource.data.resetEpoch is int && request.resource.data.resetEpoch >= 0
-        && request.resource.data.achievements is list && request.resource.data.achievements.size() <= 20;
+        && request.resource.data.achievements is list && request.resource.data.achievements.size() <= 40;
       allow delete: if false;
     }
     match /{document=**} { allow read, write: if false; }

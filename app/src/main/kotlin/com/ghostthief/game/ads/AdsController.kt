@@ -12,6 +12,15 @@ interface AdsController {
     fun detachBanner()
     /** يعرض إعلاناً بينياً فقط عند نقطة انتقال طبيعية وإن سمحت السياسة. ينادي [onDone] دائماً. */
     fun maybeShowInterstitial(activity: Activity, gameBusy: Boolean, onDone: () -> Unit)
+
+    /** هل إعلانات المكافأة متاحة في هذه النسخة؟ (noads: لا). */
+    val rewardedSupported: Boolean get() = false
+
+    /**
+     * إعلان مكافأة اختياري يشاهده الطفل ليفتح مركبة. [onReward] فقط إذا اكتمل الإعلان فعلاً؛ وإلا [onFail].
+     * ينادَى أحدهما مرة واحدة على الأكثر.
+     */
+    fun showRewarded(activity: Activity, onReward: () -> Unit, onFail: () -> Unit) { onFail() }
 }
 
 /** سياسة ظهور الإعلان البيني: لا أثناء القبض/السجن، وبحد أدنى بين إعلانين. */
@@ -48,6 +57,18 @@ class SafeAdsController(
     override fun init(activity: Activity) = guarded { delegate.init(activity) }
     override fun attachBanner(container: ViewGroup) = guarded { delegate.attachBanner(container) }
     override fun detachBanner() { try { delegate.detachBanner() } catch (t: Throwable) { failures++ } }
+
+    override val rewardedSupported get() = delegate.rewardedSupported && !disabled
+
+    override fun showRewarded(activity: Activity, onReward: () -> Unit, onFail: () -> Unit) {
+        if (disabled) { onFail(); return }
+        try {
+            delegate.showRewarded(activity, onReward, onFail)
+        } catch (t: Throwable) {
+            failures++
+            onFail()
+        }
+    }
 
     override fun maybeShowInterstitial(activity: Activity, gameBusy: Boolean, onDone: () -> Unit) {
         if (disabled) { onDone(); return }

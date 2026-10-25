@@ -2,6 +2,8 @@ package com.ghostthief.game.ads
 
 import android.app.Activity
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import android.view.View
 import android.view.ViewGroup
 import com.ghostthief.game.BuildConfig
@@ -10,6 +12,7 @@ import com.startapp.sdk.ads.banner.Banner
 import com.startapp.sdk.adsbase.Ad
 import com.startapp.sdk.adsbase.StartAppAd
 import com.startapp.sdk.adsbase.StartAppSDK
+import com.startapp.sdk.adsbase.VideoListener
 import com.startapp.sdk.adsbase.adlisteners.AdDisplayListener
 import com.startapp.sdk.adsbase.adlisteners.AdEventListener
 
@@ -81,5 +84,37 @@ private class StartIoAds(
             override fun adNotDisplayed(p0: Ad?) { onDone() }
         })
         if (!shown) onDone()
+    }
+
+    override val rewardedSupported = true
+
+    /** إعلان فيديو مكافأة (اختياري): لا مكافأة إلا بعد اكتمال الفيديو وإغلاقه. مهلة 12 ثانية للتحميل. */
+    override fun showRewarded(activity: Activity, onReward: () -> Unit, onFail: () -> Unit) {
+        if (!settings.adsEnabled || !sdkReady) { onFail(); return }
+        val ad = StartAppAd(activity)
+        var completed = false
+        var finished = false
+        val handler = Handler(Looper.getMainLooper())
+        fun finish(ok: Boolean) {
+            if (finished) return
+            finished = true
+            handler.removeCallbacksAndMessages(null)
+            if (ok) onReward() else onFail()
+        }
+        handler.postDelayed({ finish(false) }, 12_000L)
+        ad.setVideoListener(VideoListener { completed = true })
+        ad.loadAd(StartAppAd.AdMode.REWARDED_VIDEO, object : AdEventListener {
+            override fun onReceiveAd(p0: Ad) {
+                if (finished) return
+                val shown = ad.showAd(object : AdDisplayListener {
+                    override fun adHidden(p0: Ad?) { finish(completed) }
+                    override fun adDisplayed(p0: Ad?) { handler.removeCallbacksAndMessages(null) }
+                    override fun adClicked(p0: Ad?) {}
+                    override fun adNotDisplayed(p0: Ad?) { finish(false) }
+                })
+                if (!shown) finish(false)
+            }
+            override fun onFailedToReceiveAd(p0: Ad?) { finish(false) }
+        })
     }
 }

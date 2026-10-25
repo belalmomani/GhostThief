@@ -87,6 +87,22 @@ class Settings(private val kv: KeyValueStore) {
         get() = kv.getBoolean("police_mode", false)
         set(v) = kv.put("police_mode", v)
 
+    /** مركبة الشرطة المختارة من المرآب. */
+    var vehicleId: String
+        get() = kv.getString("vehicle_id", "default") ?: "default"
+        set(v) = kv.put("vehicle_id", v)
+
+    /** سجل الإعلانات المكافِئة: اليوم، وعددها فيه، وآخر وقت. */
+    var adRewardDay: Long
+        get() = kv.getLong("ad_reward_day", 0L)
+        set(v) = kv.put("ad_reward_day", v)
+    var adRewardCount: Int
+        get() = kv.getInt("ad_reward_count", 0)
+        set(v) = kv.put("ad_reward_count", v)
+    var adRewardLast: Long
+        get() = kv.getLong("ad_reward_last", 0L)
+        set(v) = kv.put("ad_reward_last", v)
+
     /** هل شاهد المستخدم الدليل التعريفي؟ */
     var onboardingDone: Boolean
         get() = kv.getBoolean("onboarding_done", false)

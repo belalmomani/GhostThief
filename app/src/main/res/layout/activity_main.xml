@@ -65,10 +65,16 @@
             android:text="@string/show_jail" android:textSize="17sp" />
 
         <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnGarage"
+            style="@style/Widget.Material3.Button.TonalButton"
+            android:layout_width="match_parent" android:layout_height="56dp"
+            android:layout_marginTop="12dp" android:text="@string/garage" android:textSize="17sp" />
+
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/btnAchievements"
             style="@style/Widget.Material3.Button.TonalButton"
             android:layout_width="match_parent" android:layout_height="56dp"
-            android:layout_marginTop="12dp" android:text="@string/achievements" android:textSize="17sp" />
+            android:layout_marginTop="8dp" android:text="@string/achievements" android:textSize="17sp" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnSettings"

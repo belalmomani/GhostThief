@@ -182,7 +182,7 @@ class FloatingService : Service() {
             visibility = View.GONE
             onFrame = { followAll() }
         }
-        carW = (eng.squad.carWidth * 1.2f).toInt(); carH = (eng.squad.carWidth * 0.7f).toInt()
+        carW = (eng.maxCarWidth() * 1.2f).toInt(); carH = (eng.maxCarWidth() * 0.9f).toInt()
         val cLp = overlayParams(carW, carH).apply { flags = flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE }
         val cv = GameView(this).apply {
             role = GameView.Role.CAR

@@ -49,6 +49,7 @@ class MainActivity : BaseActivity() {
         }
         findViewById<MaterialButton>(R.id.btnKid).setOnClickListener { startKidMode() }
         findViewById<MaterialButton>(R.id.btnAchievements).setOnClickListener { showAchievements() }
+        findViewById<MaterialButton>(R.id.btnGarage).setOnClickListener { startActivity(Intent(this, GarageActivity::class.java)) }
         if (!app.settings.onboardingDone) startActivity(Intent(this, OnboardingActivity::class.java))
         findViewById<MaterialButton>(R.id.btnPrivacy).setOnClickListener { TextPageActivity.open(this, TextPageActivity.PRIVACY) }
         findViewById<MaterialButton>(R.id.btnAbout).setOnClickListener { TextPageActivity.open(this, TextPageActivity.ABOUT) }
@@ -77,7 +78,7 @@ class MainActivity : BaseActivity() {
     private fun refresh() {
         binding = true
         val p = app.progress.load()
-        findViewById<TextView>(R.id.tvStats).text = getString(R.string.stats, p.captures, p.points, p.achievements.size)
+        findViewById<TextView>(R.id.tvStats).text = getString(R.string.stats, p.captures, p.points, p.achievements.count { !com.ghostthief.game.logic.VehicleRules.isVehicleKey(it) })
         swFloating.isChecked = app.settings.floatingEnabled
         swJail.isChecked = app.settings.jailVisible
         binding = false

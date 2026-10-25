@@ -55,8 +55,6 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
         /** أبعاد صور الشرطي: مستوى القدمين وارتفاع المحتوى داخل اللوحة 256×320. */
         private const val POLICE_FEET_Y = 310f
         private const val POLICE_CONTENT_H = 285f
-        /** أسفل العجلات داخل صورة السيارة 440×230. */
-        private const val CAR_WHEEL_BOTTOM_Y = 216f
     }
 
     private val density = resources.displayMetrics.density
@@ -245,7 +243,7 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
             }
             Role.CAR -> if (e.policeActive && e.squad.carVisible) {
                 c.save(); c.translate(-originX, -originY)
-                drawCar(c, e.squad, sp)
+                drawCar(c, e.squad, sp, e.vehicle)
                 c.restore()
             }
         }
@@ -327,30 +325,41 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
         items.add(e.brain.y to { drawThief(c, e, sp) })
         if (e.policeActive) {
             val sq = e.squad
-            if (sq.carVisible) items.add((sq.cy + 1f) to { drawCar(c, sq, sp) })
+            if (sq.carVisible) items.add((sq.cy + 1f) to { drawCar(c, sq, sp, e.vehicle) })
             if (sq.officerVisible) items.add(sq.oy to { drawOfficer(c, sq, sp) })
         }
         items.sortBy { it.first }
         for (it in items) it.second()
     }
 
-    private fun drawCar(c: Canvas, sq: com.ghostthief.game.logic.PoliceSquad, sp: Sprites) {
-        val bmp = sp.policeCar
+    private fun drawCar(c: Canvas, sq: com.ghostthief.game.logic.PoliceSquad, sp: Sprites, spec: VehicleSpec) {
+        val bmp = sp.vehicleBitmap(spec)
         val s = sq.carWidth / bmp.width
-        val flip = sq.cfacing < 0
-        val groundY = sq.cy + thiefStandDrawnH(sp) / 2f            // العجلات على نفس خط أرض الشخصيات
-        c.save(); c.translate(sq.cx, groundY); c.scale(if (flip) -s else s, s)
-        c.drawBitmap(bmp, -bmp.width / 2f, -CAR_WHEEL_BOTTOM_Y, p)
-        c.restore()
-        // أضواء الطوارئ تومض (أحمر/أزرق) فوق شريط الأضواء
-        val redOn = ((sq.lightsClock * 5f).toInt() % 2) == 0
-        val lx = ((if (redOn) 195f else 249f) - bmp.width / 2f) * s * (if (flip) -1f else 1f)
-        val ly = (29f - CAR_WHEEL_BOTTOM_Y) * s
-        val col = if (redOn) Color.rgb(255, 70, 70) else Color.rgb(70, 120, 255)
-        for ((r, a) in listOf(30f to 45, 19f to 90, 10f to 190)) {
-            p.color = col; p.alpha = a; c.drawCircle(sq.cx + lx, groundY + ly, r * s * 1.8f, p)
+        // الصور الجاهزة تنظر لليسار، والافتراضية لليمين
+        val flip = if (spec.facesRight) sq.cfacing < 0 else sq.cfacing > 0
+        val groundY = sq.cy + thiefStandDrawnH(sp) / 2f              // نفس خط أرض الشخصيات
+        val lift = bmp.height * s * spec.liftFrac                    // المروحية تحلّق فوق الأرض
+        if (lift > 0f) { // ظل على الأرض تحت المروحية
+            p.style = Paint.Style.FILL; p.color = Color.argb(60, 0, 0, 0)
+            c.drawOval(RectF(sq.cx - sq.carWidth * 0.32f, groundY - 5f * density, sq.cx + sq.carWidth * 0.32f, groundY + 5f * density), p)
         }
-        p.alpha = 255
+        c.save(); c.translate(sq.cx, groundY - lift); c.scale(if (flip) -s else s, s)
+        c.drawBitmap(bmp, -bmp.width / 2f, -bmp.height * spec.groundFrac, p)
+        c.restore()
+        // أضواء الطوارئ تومض (أحمر/أزرق) فوق شريط الأضواء إن وُجد موضع لها
+        val blue = spec.blue; val red = spec.red
+        if (blue != null && red != null) {
+            val redOn = ((sq.lightsClock * 5f).toInt() % 2) == 0
+            val pt = if (redOn) red else blue
+            val lx = (pt.first - 0.5f) * bmp.width * s * (if (flip) -1f else 1f)
+            val ly = (pt.second - spec.groundFrac) * bmp.height * s
+            val col = if (redOn) Color.rgb(255, 70, 70) else Color.rgb(70, 120, 255)
+            val w = sq.carWidth
+            for ((rf, a) in listOf(0.123f to 45, 0.078f to 90, 0.041f to 190)) {
+                p.color = col; p.alpha = a; c.drawCircle(sq.cx + lx, groundY - lift + ly, w * rf, p)
+            }
+            p.alpha = 255
+        }
     }
 
     private fun drawOfficer(c: Canvas, sq: com.ghostthief.game.logic.PoliceSquad, sp: Sprites) {

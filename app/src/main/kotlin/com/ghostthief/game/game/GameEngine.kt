@@ -106,6 +106,8 @@ class GameEngine(
     // وضع الشرطي: الطفل يحرّك الشرطي بإصبعه للقبض على الحرامي ثم تأخذهما سيارة الشرطة إلى السجن
     val squad = PoliceSquad(rnd)
     var policeMode = false; private set
+    /** مركبة الشرطة الحالية (المختارة من المرآب إن كانت مفتوحة). */
+    var vehicle: VehicleSpec = Vehicles.byId("default"); private set
     val policeActive: Boolean get() = policeMode
     private var policeDown = false
     private var policePlaced = false
@@ -130,9 +132,16 @@ class GameEngine(
     fun applySettings() {
         brain.config.speedScale = settings.speedPercent / 100f
         policeMode = settings.policeMode
+        vehicle = Vehicles.effective(settings.vehicleId, progress.load())
+        applyVehicleSize()
         brain.hideChance = if (policeActive) 0.2f else 0.45f
         relayoutJail()
     }
+
+    private fun applyVehicleSize() { squad.carWidth = thiefRadius * 4.1f * vehicle.widthFactor }
+
+    /** أقصى عرض لأي مركبة (لتحديد حجم نافذة السيارة العائمة). */
+    fun maxCarWidth() = thiefRadius * 4.1f * 1.15f
 
     /** يشغّل/يطفئ وضع الشرطي (ويحفظه في الإعدادات). */
     fun setPoliceMode(on: Boolean) {
@@ -153,7 +162,7 @@ class GameEngine(
         jailMargin = (if (compact) 14f else 8f) * density // في الوضع العائم: هامش يتسع لأزرار النافذة
         brain.minY = topInset
         brain.setArena(w, h - bottomInset)
-        squad.carWidth = thiefRadius * 4.1f
+        applyVehicleSize()
         squad.setArena(w, h - bottomInset, topInset)
         if (!policePlaced) { squad.place(w * 0.2f, h * 0.7f); policePlaced = true }
         relayoutJail()
