@@ -157,4 +157,70 @@ class PoliceTest {
         advanceEngine(e, 0.1f)
         assertEquals(ThiefState.ARRESTED, e.brain.state)
     }
+
+    @Test fun arrowsMoveTheOfficer_andReleasingStopsHim() {
+        val sq = squad(); sq.place(300f, 300f)
+        sq.setDirection(1f, 0f); repeat(10) { sq.update(0.05f) }
+        assertTrue(sq.ox > 400f); assertTrue(sq.moving); assertEquals(1f, sq.speedRatio, 0.01f)
+        sq.setDirection(0f, 0f); sq.update(0.05f)
+        assertFalse(sq.moving)
+    }
+
+    @Test fun diagonalArrows_areNotFasterThanStraightOnes() {
+        val a = squad(); a.place(300f, 300f); a.setDirection(1f, 0f); a.update(0.1f)
+        val b = squad(); b.place(300f, 300f); b.setDirection(1f, 1f); b.update(0.1f)
+        val da = Math.hypot((a.ox - 300f).toDouble(), (a.oy - 300f).toDouble())
+        val db = Math.hypot((b.ox - 300f).toDouble(), (b.oy - 300f).toDouble())
+        assertEquals(da, db, 0.5)
+    }
+
+    @Test fun openVehicle_hasItsOwnDriver_officerStaysFree() {
+        val sq = squad(); sq.officerBoards = false; sq.place(200f, 300f)
+        assertTrue(sq.arrest(220f, 300f, 700f, 150f))
+        var dropped = false; var t = 0f; var officerAlwaysVisible = true; var thiefHiddenWhileDriving = false
+        while (t < 15f && !dropped) {
+            sq.update(0.05f)
+            if (!sq.officerVisible) officerAlwaysVisible = false
+            if (sq.stage == PoliceStage.DRIVING && !sq.thiefVisible && sq.passengersAboard) thiefHiddenWhileDriving = true
+            if (sq.takeDropped()) dropped = true
+            t += 0.05f
+        }
+        assertTrue(dropped); assertTrue(officerAlwaysVisible); assertTrue(thiefHiddenWhileDriving)
+        assertEquals(200f, sq.ox, 0.01f)                    // لا ينتقل الشرطي إلى السجن مع المركبة
+        repeat(80) { sq.update(0.05f) }
+        assertEquals(PoliceStage.PATROL, sq.stage)
+    }
+
+    @Test fun officerCanWalkDuringAnOpenVehicleDelivery() {
+        val sq = squad(); sq.officerBoards = false; sq.place(200f, 300f)
+        sq.arrest(220f, 300f, 700f, 150f)
+        sq.setDirection(0f, 1f); repeat(10) { sq.update(0.05f) }
+        assertTrue(sq.oy > 300f)
+    }
+
+    @Test fun vehicleType_decidesWhetherTheOfficerBoards() {
+        val env = Env(); env.repo.awardPoints(100_000)
+        for (id in listOf("sedan", "suv", "classic", "pickup", "van", "moto", "atv", "sport", "heli")) env.repo.buyVehicle(id)
+        val expectBoards = mapOf("sedan" to true, "suv" to true, "classic" to true, "pickup" to true, "van" to true, "sport" to true, "moto" to false, "atv" to false, "heli" to false)
+        for ((id, boards) in expectBoards) {
+            env.settings.vehicleId = id
+            assertEquals(id, boards, env.engine().squad.officerBoards)
+        }
+    }
+
+    @Test fun inPoliceMode_touchingTheGameAreaDoesNotMoveTheOfficer() {
+        val env = Env(); val e = env.engine(); e.setPoliceMode(true)
+        e.squad.place(200f, 300f)
+        e.touchDown(600f, 100f); e.touchMove(650f, 120f); e.touchUp(650f, 120f)
+        advanceEngine(e, 0.3f)
+        assertEquals(200f, e.squad.ox, 0.01f); assertFalse(e.squad.moving)
+    }
+
+    @Test fun engineArrows_moveOfficerOnlyInPoliceMode() {
+        val env = Env(); val e = env.engine()
+        e.squad.place(200f, 300f); e.policeDirection(1f, 0f); advanceEngine(e, 0.3f)
+        assertEquals(200f, e.squad.ox, 0.01f)                       // الوضع مطفأ
+        e.setPoliceMode(true); e.policeDirection(1f, 0f); advanceEngine(e, 0.3f)
+        assertTrue(e.squad.ox > 250f)
+    }
 }

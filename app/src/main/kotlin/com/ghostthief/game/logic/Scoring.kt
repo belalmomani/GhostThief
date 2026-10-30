@@ -7,8 +7,13 @@ data class Progress(
     val points: Int = 0,
     val achievements: Set<String> = emptySet(),
     /** يزيد عند "إعادة الضبط" حتى لا تعيد المزامنة بيانات قديمة. */
-    val resetEpoch: Int = 0
+    val resetEpoch: Int = 0,
+    /** مجموع ما أُنفق على شراء المركبات. الرصيد = points - spent (كلاهما تصاعدي فيبقى الدمج آمناً). */
+    val spent: Int = 0
 ) {
+    /** رصيد النقاط القابل للإنفاق. */
+    val balance: Int get() = (points - spent).coerceAtLeast(0)
+
     companion object {
         /**
          * دمج آمن: إن اختلف resetEpoch يفوز الأعلى؛ وإلا أخذ الأكبر لكل عدّاد واتحاد الإنجازات.
@@ -22,7 +27,8 @@ data class Progress(
                 circleCaptures = maxOf(a.circleCaptures, b.circleCaptures),
                 points = maxOf(a.points, b.points),
                 achievements = a.achievements + b.achievements,
-                resetEpoch = a.resetEpoch
+                resetEpoch = a.resetEpoch,
+                spent = maxOf(a.spent, b.spent)
             )
         }
     }

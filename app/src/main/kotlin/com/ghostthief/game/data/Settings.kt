@@ -87,6 +87,14 @@ class Settings(private val kv: KeyValueStore) {
         get() = kv.getBoolean("police_mode", false)
         set(v) = kv.put("police_mode", v)
 
+    /** نقاط اللعب اليومية (حد أقصى في اليوم). */
+    var playPointsDay: Long
+        get() = kv.getLong("play_points_day", 0L)
+        set(v) = kv.put("play_points_day", v)
+    var playPointsToday: Int
+        get() = kv.getInt("play_points_today", 0)
+        set(v) = kv.put("play_points_today", v)
+
     /** مركبة الشرطة المختارة من المرآب. */
     var vehicleId: String
         get() = kv.getString("vehicle_id", "default") ?: "default"

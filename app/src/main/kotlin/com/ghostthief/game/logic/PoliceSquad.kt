@@ -5,13 +5,16 @@ import kotlin.math.hypot
 import kotlin.math.min
 import kotlin.random.Random
 
-/** مراحل عملية القبض بالشرطي والسيارة. */
+/** مراحل عملية القبض بالشرطي والمركبة. */
 enum class PoliceStage { PATROL, ARRESTING, CAR_COMING, BOARDING, DRIVING, DROP, CAR_LEAVING }
 
 /**
- * الشرطي (يتحكم به الطفل) وسيارة الشرطة: منطق نقي بلا Android.
- * التسلسل: الشرطي يلمس الحرامي ← يُكبَّل ← تأتي السيارة ← يصعدان ← السيارة تقود إلى السجن
- * ← يُسلَّم الحرامي (dropped) ← يخرج الشرطي وتغادر السيارة ← يعود الشرطي للدورية.
+ * الشرطي (يتحكم به الطفل بالأسهم) ومركبة الشرطة: منطق نقي بلا Android.
+ * التسلسل: الشرطي يلمس الحرامي ← يُكبَّل ← تأتي المركبة ← يصعد الحرامي (والشرطي إن كانت المركبة مغلقة) ←
+ * تقود إلى السجن ← يُسلَّم الحرامي (dropped) ← تغادر المركبة ← يعود الشرطي للدورية.
+ *
+ * مركبة مفتوحة (دراجة، مروحية): لها سائقها الخاص (يُرسم على المركبة) ويصعد الحرامي فقط، أما الشرطي
+ * الذي يتحكم به الطفل فيبقى حراً في مكانه. مركبة مغلقة (سيارة): يصعد الشرطي والحرامي معاً.
  */
 class PoliceSquad(@Suppress("unused") private val rnd: Random = Random.Default) {
     var stage = PoliceStage.PATROL
@@ -33,14 +36,23 @@ class PoliceSquad(@Suppress("unused") private val rnd: Random = Random.Default) 
     var moving = false
         private set
     var speedPx = 260f
-    /** 0..1: نسبة السرعة الحالية (يبطؤ الشرطي قرب الهدف) — تُستخدم لاختيار المشي أو الركض. */
+    /** 0..1: نسبة السرعة الحالية (يبطؤ الشرطي قرب الهدف) — لاختيار المشي أو الركض. */
     var speedRatio = 0f
         private set
-    /** سرعة السيارة بالبكسل/ثانية (للتحكم بصوت المحرك). */
+    /** سرعة المركبة بالبكسل/ثانية (للتحكم بصوت المحرك). */
     var carSpeed = 0f
         private set
+    /** هل يصعد الشرطي مع الحرامي؟ false للدراجة والمروحية (لهما سائق خاص). */
+    var officerBoards = true
 
-    // السيارة
+    // اتجاه الأسهم (من لوحة الأسهم): (0,0) = واقف
+    var dirX = 0f
+        private set
+    var dirY = 0f
+        private set
+    val hasDirection: Boolean get() = dirX != 0f || dirY != 0f
+
+    // المركبة
     var cx = -500f
         private set
     var cy = 0f
@@ -63,8 +75,11 @@ class PoliceSquad(@Suppress("unused") private val rnd: Random = Random.Default) 
     var thiefVisible = true
         private set
 
-    /** true لمرة واحدة عند وصول السيارة إلى السجن (يُستهلك بـ [takeDropped]). */
+    /** الركاب على متن المركبة الآن (يُرسمون مع المركبة في المراكب المفتوحة). */
+    val passengersAboard: Boolean get() = stage == PoliceStage.DRIVING
+
     private var dropped = false
+    /** true لمرة واحدة عند وصول المركبة إلى السجن. */
     fun takeDropped(): Boolean { val d = dropped; dropped = false; return d }
 
     private var hasObstacle = false
@@ -89,17 +104,23 @@ class PoliceSquad(@Suppress("unused") private val rnd: Random = Random.Default) 
 
     fun place(x: Float, y: Float) { ox = x; oy = y; hasTarget = false; clampOfficer() }
 
-    /** هدف حركة الشرطي (إصبع الطفل). */
+    /** هدف حركة الشرطي (للاختبار أو للتحكم بالنقر). */
     fun moveTo(x: Float, y: Float) { tx = x; ty = y; hasTarget = true }
-    fun stop() { hasTarget = false }
+    fun stop() { hasTarget = false; dirX = 0f; dirY = 0f }
 
-    /** يبدأ القبض: يُكبَّل الحرامي في مكانه ثم تأتي السيارة. */
+    /** اتجاه الأسهم: كل مركّبة بين -1 و1. (0,0) يوقف الشرطي. */
+    fun setDirection(x: Float, y: Float) {
+        dirX = x.coerceIn(-1f, 1f); dirY = y.coerceIn(-1f, 1f)
+        if (hasDirection) hasTarget = false
+    }
+
+    /** يبدأ القبض: يُكبَّل الحرامي في مكانه ثم تأتي المركبة. */
     fun arrest(thiefAtX: Float, thiefAtY: Float, jailDestX: Float, jailDestY: Float): Boolean {
         if (stage != PoliceStage.PATROL) return false
         thiefX = thiefAtX; thiefY = thiefAtY; thiefScale = 1f; thiefVisible = true
         destX = jailDestX; destY = jailDestY
-        hasTarget = false; moving = false
-        // الشرطي ينظر نحو الحرامي
+        hasTarget = false
+        if (officerBoards) { moving = false; setDirection(0f, 0f) }
         ofacing = if (thiefAtX >= ox) 1 else -1
         enter(PoliceStage.ARRESTING)
         return true
@@ -111,7 +132,7 @@ class PoliceSquad(@Suppress("unused") private val rnd: Random = Random.Default) 
     fun reset() {
         stage = PoliceStage.PATROL; stageTime = 0f; carVisible = false
         officerVisible = true; officerScale = 1f; thiefVisible = true; thiefScale = 1f
-        dropped = false; hasTarget = false; moving = false
+        dropped = false; hasTarget = false; moving = false; dirX = 0f; dirY = 0f
     }
 
     fun isBusy() = stage != PoliceStage.PATROL && stage != PoliceStage.CAR_LEAVING
@@ -121,28 +142,34 @@ class PoliceSquad(@Suppress("unused") private val rnd: Random = Random.Default) 
         stageTime += d
         lightsClock += d
         val prevCx = cx; val prevCy = cy
+
+        // الشرطي حر في الحركة، إلا إن كان سيصعد المركبة (مركبة مغلقة) أثناء العملية
+        val officerFree = stage == PoliceStage.PATROL || stage == PoliceStage.CAR_LEAVING || !officerBoards
+        if (officerFree) walkOfficer(d) else { moving = false; speedRatio = 0f }
+
         when (stage) {
-            PoliceStage.PATROL, PoliceStage.CAR_LEAVING -> {
-                walkOfficer(d)
-                if (stage == PoliceStage.CAR_LEAVING) driveCarAway(d)
-            }
-            PoliceStage.ARRESTING -> {
-                moving = false
-                if (stageTime >= 0.9f) startCar()
-            }
+            PoliceStage.PATROL -> {}
+            PoliceStage.ARRESTING -> if (stageTime >= 0.9f) startCar()
             PoliceStage.CAR_COMING -> {
                 val dx = carTargetX - cx
                 val step = (abs(dx) * 4f + 120f) * d // يتباطأ عند الاقتراب
                 cx += (if (dx > 0) 1 else -1) * min(abs(dx), step)
-                if (abs(carTargetX - cx) < 2f) { cx = carTargetX; startOX = ox; startOY = oy; startTX = thiefX; startTY = thiefY; enter(PoliceStage.BOARDING) }
+                if (abs(carTargetX - cx) < 2f) {
+                    cx = carTargetX; startOX = ox; startOY = oy; startTX = thiefX; startTY = thiefY
+                    enter(PoliceStage.BOARDING)
+                }
             }
             PoliceStage.BOARDING -> {
                 val p = (stageTime / 0.7f).coerceIn(0f, 1f)
-                ox = startOX + (cx - startOX) * p; oy = startOY + (cy - startOY) * p
                 thiefX = startTX + (cx - startTX) * p; thiefY = startTY + (cy - startTY) * p
-                officerScale = 1f - 0.6f * p; thiefScale = 1f - 0.6f * p
+                thiefScale = 1f - 0.6f * p
+                if (officerBoards) {
+                    ox = startOX + (cx - startOX) * p; oy = startOY + (cy - startOY) * p
+                    officerScale = 1f - 0.6f * p
+                }
                 if (p >= 1f) {
-                    officerVisible = false; thiefVisible = false
+                    thiefVisible = false
+                    if (officerBoards) officerVisible = false
                     cfacing = if (destX >= cx) 1 else -1
                     enter(PoliceStage.DRIVING)
                 }
@@ -153,25 +180,23 @@ class PoliceSquad(@Suppress("unused") private val rnd: Random = Random.Default) 
                 val v = 520f * d
                 if (dist <= v + 2f) {
                     cx = destX; cy = destY
-                    ox = cx + cfacing * carWidth * 0.6f; oy = cy
-                    officerVisible = true; officerScale = 1f; ofacing = cfacing
+                    if (officerBoards) { // ينزل الشرطي بجانب المركبة
+                        ox = cx + cfacing * carWidth * 0.6f; oy = cy
+                        officerVisible = true; officerScale = 1f; ofacing = cfacing
+                    }
+                    thiefX = cx; thiefY = cy
                     dropped = true
                     enter(PoliceStage.DROP)
                 } else {
                     cx += dx / dist * v; cy += dy / dist * v
                     if (abs(dx) > 4f) cfacing = if (dx > 0) 1 else -1
-                    ox = cx; oy = cy; thiefX = cx; thiefY = cy
+                    thiefX = cx; thiefY = cy
+                    if (officerBoards) { ox = cx; oy = cy }
                 }
             }
-            PoliceStage.DROP -> {
-                moving = false
-                if (stageTime >= 1.2f) { enter(PoliceStage.CAR_LEAVING) }
-            }
+            PoliceStage.DROP -> if (stageTime >= 1.2f) enter(PoliceStage.CAR_LEAVING)
+            PoliceStage.CAR_LEAVING -> driveCarAway(d)
         }
-        finishFrame(d, prevCx, prevCy)
-    }
-
-    private fun finishFrame(d: Float, prevCx: Float, prevCy: Float) {
         carSpeed = if (carVisible && d > 0f) hypot(cx - prevCx, cy - prevCy) / d else 0f
     }
 
@@ -181,8 +206,8 @@ class PoliceSquad(@Suppress("unused") private val rnd: Random = Random.Default) 
         carVisible = true
         cx = if (fromLeft) -carWidth else arenaW + carWidth
         cy = (oy + carWidth * 0.12f).coerceIn(minY + carWidth * 0.3f, arenaH - carWidth * 0.3f)
-        // تقف بجانب الشرطي من جهة قدومها
-        carTargetX = ox - cfacing * carWidth * 0.55f
+        // تقف بجانب الحرامي المكبَّل من جهة قدومها
+        carTargetX = thiefX - cfacing * carWidth * 0.55f
         enter(PoliceStage.CAR_COMING)
     }
 
@@ -192,6 +217,15 @@ class PoliceSquad(@Suppress("unused") private val rnd: Random = Random.Default) 
     }
 
     private fun walkOfficer(d: Float) {
+        if (hasDirection) { // التحكم بالأسهم
+            val len = hypot(dirX, dirY)
+            ox += dirX / len * speedPx * d; oy += dirY / len * speedPx * d
+            if (abs(dirX) > 0.1f) ofacing = if (dirX > 0) 1 else -1
+            walkClock += d * 1.4f
+            moving = true; speedRatio = 1f
+            clampOfficer(); pushOutOfObstacle()
+            return
+        }
         if (!hasTarget) { moving = false; speedRatio = 0f; return }
         val dx = tx - ox; val dy = ty - oy
         val dist = hypot(dx, dy)

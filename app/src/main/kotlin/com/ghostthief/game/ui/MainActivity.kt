@@ -78,7 +78,7 @@ class MainActivity : BaseActivity() {
     private fun refresh() {
         binding = true
         val p = app.progress.load()
-        findViewById<TextView>(R.id.tvStats).text = getString(R.string.stats, p.captures, p.points, p.achievements.count { !com.ghostthief.game.logic.VehicleRules.isVehicleKey(it) })
+        findViewById<TextView>(R.id.tvStats).text = getString(R.string.stats, p.captures, p.balance, p.achievements.count { !com.ghostthief.game.logic.VehicleRules.isVehicleKey(it) })
         swFloating.isChecked = app.settings.floatingEnabled
         swJail.isChecked = app.settings.jailVisible
         binding = false

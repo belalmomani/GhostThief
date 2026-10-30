@@ -5,10 +5,11 @@ service cloud.firestore {
     match /users/{uid} {
       allow read: if request.auth != null && request.auth.uid == uid;
       allow create, update: if request.auth != null && request.auth.uid == uid
-        && request.resource.data.keys().hasOnly(['captures','circleCaptures','points','achievements','resetEpoch','updatedAt'])
+        && request.resource.data.keys().hasOnly(['captures','circleCaptures','points','achievements','resetEpoch','spent','updatedAt'])
         && request.resource.data.captures is int && request.resource.data.captures >= 0 && request.resource.data.captures < 10000000
         && request.resource.data.circleCaptures is int && request.resource.data.circleCaptures >= 0
         && request.resource.data.points is int && request.resource.data.points >= 0 && request.resource.data.points < 1000000000
+        && request.resource.data.spent is int && request.resource.data.spent >= 0 && request.resource.data.spent <= request.resource.data.points
         && request.resource.data.resetEpoch is int && request.resource.data.resetEpoch >= 0
         && request.resource.data.achievements is list && request.resource.data.achievements.size() <= 40;
       allow delete: if false;

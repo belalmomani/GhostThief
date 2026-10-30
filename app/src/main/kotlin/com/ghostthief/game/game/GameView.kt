@@ -27,7 +27,7 @@ import kotlin.random.Random
 class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? = null) :
     View(context, attrs), Choreographer.FrameCallback, GameListener {
 
-    enum class Role { FULL, ACTOR, JAIL, OFFICER, CAR }
+    enum class Role { FULL, ACTOR, JAIL, OFFICER, CAR, PAD }
     var role = Role.FULL
 
     var engine: GameEngine? = null
@@ -65,6 +65,9 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
     private var lastInvalidate = 0L
     private var touching = false
     private var jailDragging = false
+    private var jailTapDownX = 0f
+    private var jailTapDownY = 0f
+    private var jailTapMoved = false
     private var lastRawX = 0f
     private var lastRawY = 0f
 
@@ -80,20 +83,18 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
 
     fun start() {
         if (running) return
-        if (sprites == null) sprites = Sprites.acquire(context)
+        if (role != Role.PAD && sprites == null) sprites = Sprites.acquire(context)
         if (fx == null && ownsListener()) engine?.let { fx = SoundFx(context, it.settings) }
         running = true
-        engine?.lastTickMs = 0L
-        engine?.paused = false
+        engine?.viewStarted() // عدّاد النوافذ العاملة: المحرك لا يتوقف إلا إذا توقفت كلها
         Choreographer.getInstance().postFrameCallback(this)
     }
 
     /** إيقاف الحركة لتوفير البطارية. */
     fun pause() {
-        engine?.stopAudio() // الصفارة والمحرك لا يستمران خارج اللعبة
         fx?.stopLoops()
+        if (running) engine?.viewStopped()
         running = false
-        engine?.paused = true
         Choreographer.getInstance().removeFrameCallback(this)
     }
 
@@ -115,7 +116,10 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
     override fun doFrame(frameTimeNanos: Long) {
         if (!running) return
         val e = engine
-        if (e != null) {
+        if (e != null && role == Role.PAD) { // لوحة الأسهم: إعادة رسم خفيفة فقط (المحرك تُحدّثه النوافذ الأخرى)
+            val nowMs = frameTimeNanos / 1_000_000L
+            if (nowMs - lastInvalidate >= 100L) { lastInvalidate = nowMs; invalidate() }
+        } else if (e != null) {
             val nowMs = frameTimeNanos / 1_000_000L
             e.tick(nowMs)
             updateEffects(0.016f)
@@ -160,6 +164,8 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
             GameMessage.OUCH -> context.getString(R.string.msg_ouch)
             GameMessage.POLICE_ARREST -> context.getString(R.string.msg_police_arrest)
             GameMessage.RECOVERED -> context.getString(R.string.msg_recovered, points)
+            GameMessage.GUARD_START -> context.getString(R.string.msg_guard_start)
+            GameMessage.GUARD_OK -> context.getString(R.string.msg_guard_ok)
             GameMessage.STOLEN, GameMessage.HEIST_START, GameMessage.RESCUED, GameMessage.ESCAPED_LOOT,
             GameMessage.STASHED, GameMessage.DROPPED_LOOT -> ""
         }
@@ -210,6 +216,7 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
     // ---- الرسم ----
     override fun onDraw(c: Canvas) {
         val e = engine ?: return
+        if (role == Role.PAD) { drawPad(c, e); return }
         val sp = sprites ?: return
         when (role) {
             Role.FULL -> {
@@ -241,6 +248,7 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
                 drawOfficer(c, e.squad, sp)
                 c.restore()
             }
+            Role.PAD -> {}
             Role.CAR -> if (e.policeActive && e.squad.carVisible) {
                 c.save(); c.translate(-originX, -originY)
                 drawCar(c, e.squad, sp, e.vehicle)
@@ -315,6 +323,50 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
         }
     }
 
+    // ---- لوحة الأسهم للتحكم بالشرطي ----
+    private val padDirs = arrayOf(-1f to 0f, -1f to -1f, 0f to -1f, 1f to -1f, 1f to 0f, 1f to 1f, 0f to 1f, -1f to 1f)
+
+    private fun padTouch(ev: MotionEvent, e: GameEngine): Boolean {
+        when (ev.actionMasked) {
+            MotionEvent.ACTION_DOWN, MotionEvent.ACTION_MOVE -> {
+                val cx = width / 2f; val cy = height / 2f
+                val dx = ev.x - cx; val dy = ev.y - cy
+                if (hypot(dx.toDouble(), dy.toDouble()) < width * 0.14) { e.policeDirection(0f, 0f); return true }
+                val ang = kotlin.math.atan2(dy.toDouble(), dx.toDouble())
+                val k = Math.round((ang + Math.PI) / (Math.PI / 4)).toInt() % 8
+                var (ddx, ddy) = padDirs[k]
+                if (ddx != 0f && ddy != 0f) { ddx *= 0.7071f; ddy *= 0.7071f }
+                e.policeDirection(ddx, ddy)
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> e.policeDirection(0f, 0f)
+        }
+        return true
+    }
+
+    /** أربعة أسهم (أعلى/أسفل/يمين/يسار) على قرص شفاف؛ السهم المضغوط يتوهج. */
+    private fun drawPad(c: Canvas, e: GameEngine) {
+        val w = width.toFloat(); val h = height.toFloat()
+        val cx = w / 2f; val cy = h / 2f; val r = minOf(w, h) / 2f
+        p.style = Paint.Style.FILL; p.color = Color.argb(70, 20, 50, 110)
+        c.drawCircle(cx, cy, r * 0.97f, p)
+        val dx = e.squad.dirX; val dy = e.squad.dirY
+        val arrows = listOf(0f to -1f, 0f to 1f, -1f to 0f, 1f to 0f)
+        for ((ax, ay) in arrows) {
+            val on = (ax != 0f && dx * ax > 0.3f) || (ay != 0f && dy * ay > 0.3f)
+            p.color = if (on) Color.argb(240, 255, 193, 7) else Color.argb(215, 255, 255, 255)
+            val bx = cx + ax * r * 0.58f; val by = cy + ay * r * 0.58f
+            val t = r * 0.26f
+            val path = Path()
+            if (ay != 0f) { // سهم عمودي
+                path.moveTo(bx, by + ay * t); path.lineTo(bx - t, by - ay * t * 0.7f); path.lineTo(bx + t, by - ay * t * 0.7f)
+            } else {
+                path.moveTo(bx + ax * t, by); path.lineTo(bx - ax * t * 0.7f, by - t); path.lineTo(bx - ax * t * 0.7f, by + t)
+            }
+            path.close(); c.drawPath(path, p)
+        }
+        p.color = Color.argb(120, 255, 255, 255); c.drawCircle(cx, cy, r * 0.12f, p)
+    }
+
     // ---- الشرطي وسيارة الشرطة ----
     /** ارتفاع الحرامي الواقف كما يُرسم فعلاً: مرجع حجم الشرطي وخط الأرض المشترك. */
     private fun thiefStandDrawnH(sp: Sprites) = sp.stand.height * engineThiefHeight() / sp.refHeight
@@ -346,6 +398,7 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
         c.save(); c.translate(sq.cx, groundY - lift); c.scale(if (flip) -s else s, s)
         c.drawBitmap(bmp, -bmp.width / 2f, -bmp.height * spec.groundFrac, p)
         c.restore()
+        drawRiders(c, sq, sp, spec, bmp, s, flip, groundY, lift)
         // أضواء الطوارئ تومض (أحمر/أزرق) فوق شريط الأضواء إن وُجد موضع لها
         val blue = spec.blue; val red = spec.red
         if (blue != null && red != null) {
@@ -359,6 +412,59 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
                 p.color = col; p.alpha = a; c.drawCircle(sq.cx + lx, groundY - lift + ly, w * rf, p)
             }
             p.alpha = 255
+        }
+    }
+
+    /** رسم نصف جسم جالس (ينقطع عند الورك/الكتفين) مثبّتاً عند نقطة المقعد. */
+    private fun drawSeated(c: Canvas, bmp: Bitmap, px: Float, py: Float, scale: Float, hipY: Float, clipY: Float, flipX: Boolean) {
+        c.save()
+        c.translate(px, py)
+        c.scale(if (flipX) -scale else scale, scale)
+        c.clipRect(-bmp.width.toFloat(), -hipY - 600f, bmp.width.toFloat(), clipY - hipY)
+        c.drawBitmap(bmp, -bmp.width / 2f, -hipY, p)
+        c.restore()
+    }
+
+    /**
+     * سائق المركبات المفتوحة: على الدراجة شرطي سائق والحرامي راكب خلفه، وفي المروحية طيار والحرامي معلّق بحبل.
+     * المركبات المغلقة: الركاب داخلها فلا يظهرون.
+     */
+    private fun drawRiders(c: Canvas, sq: com.ghostthief.game.logic.PoliceSquad, sp: Sprites, spec: VehicleSpec,
+                           bmp: Bitmap, s: Float, flip: Boolean, groundY: Float, lift: Float) {
+        if (spec.carry == Carry.HIDDEN) return
+        val r = thiefRadius()
+        val standH = thiefStandDrawnH(sp)
+        val officerScale = OFFICER_HEIGHT_RATIO * standH / POLICE_CONTENT_H
+        val thiefScale = engineThiefHeight() / sp.refHeight
+        val noseRight = spec.facesRight != flip                 // الأنف يتجه يميناً على الشاشة؟ (الشخصيات تنظر يميناً أصلاً)
+        val sign = if (flip) -1f else 1f
+        fun px(fx: Float) = sq.cx + (fx - 0.5f) * bmp.width * s * sign
+        fun py(fy: Float) = groundY - lift + (fy - spec.groundFrac) * bmp.height * s
+        val drv = spec.driverSeat ?: return
+        when (spec.carry) {
+            Carry.RIDE -> {
+                val pass = spec.passengerSeat
+                if (sq.passengersAboard && pass != null) // الحرامي خلف السائق
+                    drawSeated(c, sp.stand, px(pass.first), py(pass.second), 0.42f * thiefScale, 197f, 205f, !noseRight)
+                drawSeated(c, sp.policeStand, px(drv.first), py(drv.second), 0.62f * officerScale, 232f, 246f, !noseRight)
+            }
+            Carry.HELI -> {
+                drawSeated(c, sp.policeStand, px(drv.first), py(drv.second), (0.11f * sq.carWidth) / 106f, 170f, 185f, !noseRight)
+                if (sq.passengersAboard) { // الحرامي معلّق بحبل أسفل المروحية
+                    val bx = px(0.45f); val by = py(0.92f)
+                    val thiefH = 0.8f * r
+                    val top = groundY - thiefH * 0.95f
+                    val rope = maxOf(8f * density, top - by)
+                    val sway = sin(sq.lightsClock * 3f) * 3f * density
+                    p.style = Paint.Style.STROKE; p.strokeWidth = 2.5f * density; p.color = Color.rgb(121, 85, 72)
+                    c.drawLine(bx, by, bx + sway, by + rope, p)
+                    p.style = Paint.Style.FILL
+                    val hs = thiefH / sp.hide.height
+                    c.save(); c.translate(bx + sway, by + rope); c.scale(if (!noseRight) -hs else hs, hs)
+                    c.drawBitmap(sp.hide, -sp.hide.width / 2f, 0f, p); c.restore()
+                }
+            }
+            else -> {}
         }
     }
 
@@ -549,7 +655,17 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
         val l = e.jailLeft(); val t = e.jailTop(); val w = e.jailW; val h = e.jailH
         val st = e.brain.state
         if (st == ThiefState.JAILED) {
-            c.drawBitmap(sp.cageLocked, null, RectF(l, t, l + w, t + h), p)
+            // حرّاس السجن: يحاول الحرامي فتح القفل فيهتز السجن ويتوهج (انقره لتمنعه)
+            val shake = if (e.jailPickActive) sin(e.jailPickTime * 45f) * 3f * density else 0f
+            val dst = RectF(l + shake, t, l + w + shake, t + h)
+            c.drawBitmap(sp.cageLocked, null, dst, p)
+            if (e.jailPickActive) {
+                val pulse = 0.5f + 0.5f * sin(e.jailPickTime * 14f)
+                p.style = Paint.Style.STROKE; p.strokeWidth = 3f * density
+                p.color = Color.argb((120 + 120 * pulse).toInt(), 255, 82, 60)
+                c.drawRoundRect(RectF(dst.left - 3f * density, dst.top - 3f * density, dst.right + 3f * density, dst.bottom + 3f * density), 10f * density, 10f * density, p)
+                p.style = Paint.Style.FILL
+            } else drawSleepZ(c, e, l, t, w, h)
             if (e.settings.showJailTimer && e.jail.isJailed) {
                 textPaint.textSize = 13f * density; textPaint.color = Color.WHITE
                 textPaint.setShadowLayer(3f * density, 0f, 0f, Color.BLACK)
@@ -574,6 +690,20 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
         p.alpha = (a.coerceIn(0f, 1f) * 255).toInt()
         c.drawBitmap(sp.jailEmpty, null, RectF(l, t, l + w, t + h), p)
         p.alpha = 255
+    }
+
+    /** السجين ينام أحياناً: حروف Z تطفو وتتلاشى فوق القفص. */
+    private fun drawSleepZ(c: Canvas, e: GameEngine, l: Float, t: Float, w: Float, h: Float) {
+        textPaint.setShadowLayer(2f * density, 0f, 0f, Color.argb(160, 20, 50, 110))
+        for (i in 0..2) {
+            val ph = (e.jailClock * 0.45f + i / 3f) % 1f
+            val x = l + w * 0.60f + ph * w * 0.2f
+            val y = t + h * 0.30f - ph * h * 0.22f
+            textPaint.textSize = (8f + ph * 7f) * density
+            textPaint.color = Color.argb(((1f - ph) * 230f).toInt(), 235, 245, 255)
+            c.drawText("Z", x, y, textPaint)
+        }
+        textPaint.clearShadowLayer()
     }
 
     /** زر ✕ ملاصق لزاوية السجن (يغلق الوضع العائم كله). */
@@ -634,6 +764,7 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
         val e = engine ?: return false
         if (role == Role.JAIL) return jailTouch(ev, e)
         if (role == Role.CAR) return false
+        if (role == Role.PAD) return padTouch(ev, e)
         // في النافذة العائمة نستخدم إحداثيات الشاشة المطلقة (الساحة = الشاشة)
         val x = if (role == Role.FULL) ev.x else ev.rawX
         val y = if (role == Role.FULL) ev.y else ev.rawY
@@ -654,12 +785,17 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
                 val px = e.jailLeft() - originX
                 if (hypot((ev.x - px).toDouble(), (ev.y - cy).toDouble()) <= jailPad * 1.7) { onPoliceToggle?.invoke(); return true }
                 jailDragging = true; lastRawX = ev.rawX; lastRawY = ev.rawY
+                jailTapDownX = ev.rawX; jailTapDownY = ev.rawY; jailTapMoved = false
             }
             MotionEvent.ACTION_MOVE -> if (jailDragging) {
+                if (hypot((ev.rawX - jailTapDownX).toDouble(), (ev.rawY - jailTapDownY).toDouble()) > 14.0) jailTapMoved = true
                 onJailDrag?.invoke(ev.rawX - lastRawX, ev.rawY - lastRawY)
                 lastRawX = ev.rawX; lastRawY = ev.rawY
             }
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> if (jailDragging) { jailDragging = false; onJailDragEnd?.invoke() }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> if (jailDragging) {
+                jailDragging = false; onJailDragEnd?.invoke()
+                if (ev.actionMasked == MotionEvent.ACTION_UP && !jailTapMoved) e.onJailTapped() // نقرة على السجن
+            }
         }
         return true
     }

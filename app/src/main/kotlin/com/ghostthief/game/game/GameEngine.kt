@@ -10,7 +10,7 @@ import kotlin.math.sin
 import kotlin.math.min
 import kotlin.random.Random
 
-enum class GameMessage { CAUGHT, CAUGHT_BONUS, ACHIEVEMENT, CIRCLE_FAILED, ESCAPED, TRY_AGAIN, SEEK_START, FOUND, NOT_HERE, OUCH, POLICE_ARREST, STOLEN, RECOVERED, HEIST_START, RESCUED, ESCAPED_LOOT, STASHED, DROPPED_LOOT }
+enum class GameMessage { CAUGHT, CAUGHT_BONUS, ACHIEVEMENT, CIRCLE_FAILED, ESCAPED, TRY_AGAIN, SEEK_START, FOUND, NOT_HERE, OUCH, POLICE_ARREST, STOLEN, RECOVERED, GUARD_START, GUARD_OK, HEIST_START, RESCUED, ESCAPED_LOOT, STASHED, DROPPED_LOOT }
 
 interface GameListener {
     fun onMessage(msg: GameMessage, points: Int = 0)
@@ -73,6 +73,9 @@ class GameEngine(
     private var draggingJail = false
     private var dragDX = 0f
     private var dragDY = 0f
+    private var jailDownX = 0f
+    private var jailDownY = 0f
+    private var jailDragMoved = false
 
     // لمس
     private val path = ArrayList<PathPoint>()
@@ -114,6 +117,31 @@ class GameEngine(
 
     var lastTickMs = 0L
     var paused = false
+    private var playAcc = 0f
+    private var activeViews = 0
+
+    /** نافذة (عرض) بدأت العمل. عند أول نافذة يُستأنف المحرك. */
+    fun viewStarted() {
+        if (activeViews == 0) { lastTickMs = 0L; paused = false }
+        activeViews++
+    }
+
+    /** نافذة توقفت. عند توقف كل النوافذ يتوقف المحرك وتُوقف الصفارة والمحرك الصوتي. */
+    fun viewStopped() {
+        activeViews = (activeViews - 1).coerceAtLeast(0)
+        if (activeViews == 0) { paused = true; stopAudio() }
+    }
+
+    // مسلّية السجن «حرّاس السجن»: يحاول الحرامي فتح القفل أحياناً، والطفل ينقر السجن ليمنعه (نقطة صغيرة، بلا عقوبة)
+    /** هل يحاول الحرامي فتح القفل الآن؟ */
+    var jailPickActive = false; private set
+    /** مدة المحاولة الجارية (للاهتزاز والتوهج). */
+    var jailPickTime = 0f; private set
+    /** ساعة تحريك السجين (حروف Z وغيرها). */
+    var jailClock = 0f; private set
+    private var jailNextPick = 5f
+    private var jailPickCount = 0
+    private var guardPointsGiven = 0
 
     init {
         val saved = progress.jailEndAt
@@ -138,7 +166,10 @@ class GameEngine(
         relayoutJail()
     }
 
-    private fun applyVehicleSize() { squad.carWidth = thiefRadius * 4.1f * vehicle.widthFactor }
+    private fun applyVehicleSize() {
+        squad.carWidth = thiefRadius * 4.1f * vehicle.widthFactor
+        squad.officerBoards = vehicle.carry == Carry.HIDDEN // الدراجة والمروحية لها سائقها الخاص
+    }
 
     /** أقصى عرض لأي مركبة (لتحديد حجم نافذة السيارة العائمة). */
     fun maxCarWidth() = thiefRadius * 4.1f * 1.15f
@@ -149,6 +180,11 @@ class GameEngine(
         policeMode = on
         brain.hideChance = if (policeActive) 0.2f else 0.45f
         if (!on) { squad.reset(); brain.clearThreat(); brain.cancelArrest(); stopAudio() }
+    }
+
+    /** اتجاه الأسهم للتحكم بالشرطي (0,0 = وقوف). */
+    fun policeDirection(dx: Float, dy: Float) {
+        if (policeActive) squad.setDirection(dx, dy) else squad.setDirection(0f, 0f)
     }
 
     fun setArena(w: Float, h: Float, density: Float) {
@@ -203,7 +239,51 @@ class GameEngine(
         update(dt)
     }
 
+    /** نقطة لكل 30 ثانية لعب فعلي، بحد يومي. */
+    private fun accruePlayPoints(dt: Float) {
+        playAcc += dt
+        if (playAcc < PlayPoints.SECONDS_PER_POINT) return
+        playAcc -= PlayPoints.SECONDS_PER_POINT
+        val now = clock.nowMillis()
+        val day = RewardPolicy.dayOf(now)
+        val count = if (settings.playPointsDay == day) settings.playPointsToday else 0
+        if (count >= PlayPoints.MAX_PER_DAY) return
+        settings.playPointsDay = day
+        settings.playPointsToday = count + 1
+        progress.awardPoints(1)
+    }
+
+    private fun updateJailGuard(dt: Float) {
+        if (brain.state != ThiefState.JAILED) { jailPickActive = false; jailClock = 0f; return }
+        jailClock += dt
+        if (jailPickActive) {
+            jailPickTime += dt
+            if (jailPickTime >= GUARD_PICK_SECONDS) { // لم يُنقر: يستسلم الحرامي هذه المرة (بلا عقوبة)
+                jailPickActive = false; jailNextPick = 6f + rnd.nextFloat() * 6f
+            }
+        } else {
+            jailNextPick -= dt
+            if (jailNextPick <= 0f) {
+                jailPickActive = true; jailPickTime = 0f; jailPickCount++
+                listener?.onSound(SoundEffect.POP)
+                if (jailPickCount <= 2) listener?.onMessage(GameMessage.GUARD_START) // التنبيه النصي أول مرتين فقط
+            }
+        }
+    }
+
+    /** نقرة على السجن: إن كان الحرامي يحاول فتح القفل فقد منعتَه. */
+    fun onJailTapped() {
+        if (brain.state != ThiefState.JAILED || !jailPickActive) return
+        jailPickActive = false
+        jailNextPick = 5f + rnd.nextFloat() * 5f
+        if (guardPointsGiven < GUARD_POINTS_MAX) { guardPointsGiven++; progress.awardPoints(1) }
+        listener?.onSound(SoundEffect.DING)
+        listener?.onMessage(GameMessage.GUARD_OK, guardPointsGiven)
+    }
+
     fun update(dt: Float) {
+        accruePlayPoints(dt)
+        updateJailGuard(dt)
         if (pointerDown && downOnThief && !moved && downTime >= 0f) {
             downTime += dt
             if (downTime >= LONG_PRESS_SEC && brain.hold()) listener?.onSound(SoundEffect.POP)
@@ -463,11 +543,10 @@ class GameEngine(
         if (brain.state != ThiefState.HELD && !hitsThief(x, y) && hitsJail(x, y)) {
             draggingJail = true; pointerDown = true
             dragDX = x - jailL; dragDY = y - jailT
+            jailDownX = x; jailDownY = y; jailDragMoved = false
             return
         }
-        if (policeActive) { // الإصبع يحرّك الشرطي
-            policeDown = true; pointerDown = true; squad.moveTo(x, y); return
-        }
+        if (policeActive) return // في وضع الشرطي: التحكم بالأسهم فقط، ولمس ساحة اللعب لا يفعل شيئاً
         if (isJailed()) return
         pointerDown = true
         path.clear(); path.add(PathPoint(x, y))
@@ -478,7 +557,10 @@ class GameEngine(
 
     fun touchMove(x: Float, y: Float) {
         if (!pointerDown) return
-        if (draggingJail) { moveJailTo(x - dragDX, y - dragDY); return }
+        if (draggingJail) {
+            if (hypot(x - jailDownX, y - jailDownY) > 14f) jailDragMoved = true
+            moveJailTo(x - dragDX, y - dragDY); return
+        }
         if (policeDown) { squad.moveTo(x, y); return }
         val last = path.lastOrNull()
         if (last != null) {
@@ -503,7 +585,11 @@ class GameEngine(
     fun touchUp(x: Float, y: Float) {
         if (!pointerDown) return
         pointerDown = false
-        if (draggingJail) { draggingJail = false; saveJailPosition(); return }
+        if (draggingJail) {
+            draggingJail = false; saveJailPosition()
+            if (!jailDragMoved) onJailTapped() // نقرة (بلا سحب) على السجن
+            return
+        }
         if (policeDown) { policeDown = false; return }
         brain.slowFactor = 1f
         when {
@@ -544,6 +630,7 @@ class GameEngine(
         if (!ok) { capture.finish(); return false }
         jail.start(settings.jailMinutes * 60_000L)
         progress.jailEndAt = jail.endAtMillis
+        guardPointsGiven = 0; jailPickCount = 0; jailNextPick = 5f; jailPickActive = false
         if (source != CaptureSource.POLICE) recoverStolen()
         val reward = progress.recordCapture(source == CaptureSource.CIRCLE)
         pointerDown = false; threadProgress = 0f; path.clear()
@@ -559,5 +646,7 @@ class GameEngine(
         const val SEEK_TIMEOUT_SEC = 45f
         const val SEEK_BONUS = 5
         const val MAX_SCENE_ICONS = 8
+        const val GUARD_PICK_SECONDS = 2.6f
+        const val GUARD_POINTS_MAX = 20
     }
 }

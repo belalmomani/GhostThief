@@ -44,7 +44,8 @@ class FirebaseBackend(private val context: Context) : CloudBackend {
                             circleCaptures = (doc.getLong("circleCaptures") ?: 0L).toInt(),
                             points = (doc.getLong("points") ?: 0L).toInt(),
                             achievements = ach,
-                            resetEpoch = (doc.getLong("resetEpoch") ?: 0L).toInt()
+                            resetEpoch = (doc.getLong("resetEpoch") ?: 0L).toInt(),
+                            spent = (doc.getLong("spent") ?: 0L).toInt()
                         )))
                     }
                     .addOnFailureListener { callback(Result.failure(it)) }
@@ -62,6 +63,7 @@ class FirebaseBackend(private val context: Context) : CloudBackend {
                     "points" to progress.points,
                     "achievements" to progress.achievements.toList(),
                     "resetEpoch" to progress.resetEpoch,
+                    "spent" to progress.spent,
                     "updatedAt" to FieldValue.serverTimestamp()
                 )
                 FirebaseFirestore.getInstance().collection("users").document(uid).set(data)

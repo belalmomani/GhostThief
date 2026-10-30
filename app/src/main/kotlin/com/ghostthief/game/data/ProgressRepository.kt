@@ -12,7 +12,8 @@ class ProgressRepository(private val kv: KeyValueStore) {
         circleCaptures = kv.getInt("p_circle", 0),
         points = kv.getInt("p_points", 0),
         achievements = (kv.getString("p_ach", "") ?: "").split(',').filter { it.isNotBlank() }.toSet(),
-        resetEpoch = kv.getInt("p_epoch", 0)
+        resetEpoch = kv.getInt("p_epoch", 0),
+        spent = kv.getInt("p_spent", 0)
     )
 
     fun save(p: Progress) {
@@ -21,6 +22,7 @@ class ProgressRepository(private val kv: KeyValueStore) {
         kv.put("p_points", p.points)
         kv.put("p_ach", p.achievements.sorted().joinToString(","))
         kv.put("p_epoch", p.resetEpoch)
+        kv.put("p_spent", p.spent)
     }
 
     /** يسجّل قبضاً جديداً ويحفظه فوراً. يجب استدعاؤه مرة واحدة لكل قبض (يضمنها CaptureController). */
@@ -38,6 +40,15 @@ class ProgressRepository(private val kv: KeyValueStore) {
         save(p.copy(achievements = p.achievements + id))
         kv.put("dirty", true)
         return true
+    }
+
+    /** شراء مركبة بالترتيب والسعر. يرجع نتيجة التحقق، ويحفظ فوراً عند النجاح. */
+    fun buyVehicle(id: String): com.ghostthief.game.logic.BuyCheck {
+        val p = load()
+        val check = com.ghostthief.game.logic.VehicleRules.canBuy(id, p)
+        if (check != com.ghostthief.game.logic.BuyCheck.OK) return check
+        com.ghostthief.game.logic.VehicleRules.buy(id, p)?.let { save(it); kv.put("dirty", true) }
+        return check
     }
 
     /** نقاط إضافية (مثل مكافأة العثور على الحرامي في وضع البحث). */

@@ -21,6 +21,7 @@ class GameActivity : BaseActivity() {
     private lateinit var app: GhostThiefApp
     private lateinit var engine: GameEngine
     private lateinit var gameView: GameView
+    private lateinit var padView: GameView
     private var kid = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -32,12 +33,17 @@ class GameActivity : BaseActivity() {
         engine = GameEngine(app.settings, app.progress)
         gameView = findViewById(R.id.gameView)
         gameView.engine = engine
+        padView = findViewById(R.id.padView)
+        padView.role = GameView.Role.PAD
+        padView.engine = engine
+        padView.visibility = if (engine.policeMode) View.VISIBLE else View.GONE
 
         findViewById<MaterialButton>(R.id.btnBack).setOnClickListener { leave() }
         val btnPolice = findViewById<MaterialButton>(R.id.btnPolice)
         fun policeLabel() { btnPolice.text = getString(if (engine.policeMode) R.string.police_toggle_on else R.string.police_toggle) }
         btnPolice.setOnClickListener {
             engine.setPoliceMode(!engine.policeMode)
+            padView.visibility = if (engine.policeMode) View.VISIBLE else View.GONE
             policeLabel()
             if (engine.policeMode) android.widget.Toast.makeText(this, R.string.police_hint, android.widget.Toast.LENGTH_LONG).show()
         }
@@ -68,9 +74,12 @@ class GameActivity : BaseActivity() {
         } else engine.seekNames = emptyList()
         com.ghostthief.game.game.LootLoader.loadAsync(this, app.settings) { engine.loots = it }
         gameView.start()
+        if (padView.visibility == View.VISIBLE) padView.start()
     }
 
     override fun onPause() {
+        engine.policeDirection(0f, 0f) // يتوقف الشرطي عند مغادرة الشاشة
+        padView.pause()
         gameView.pause() // لا نستهلك البطارية خارج اللعبة
         app.sync.syncNow()
         super.onPause()
