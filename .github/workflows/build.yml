@@ -79,7 +79,7 @@ jobs:
           if-no-files-found: ignore
 
       - name: Upload test reports
-        if: always()
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: test-reports
