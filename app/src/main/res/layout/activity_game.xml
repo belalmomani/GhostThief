@@ -4,29 +4,49 @@
     android:orientation="vertical" android:layoutDirection="rtl"
     android:background="@drawable/bg_game" android:fitsSystemWindows="true">
 
-    <LinearLayout
+    <!-- شريط الأزرار العلوي: قابل للتمرير لأن الأزرار صارت أكثر -->
+    <HorizontalScrollView
         android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:orientation="horizontal" android:padding="8dp">
+        android:scrollbars="none" android:fillViewport="true">
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnBack"
-            android:layout_width="0dp" android:layout_height="56dp" android:layout_weight="1"
-            android:text="@string/back" android:textSize="17sp" />
+        <LinearLayout
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:orientation="horizontal" android:padding="8dp">
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnPolice"
-            style="@style/Widget.Material3.Button.TonalButton"
-            android:layout_width="0dp" android:layout_height="56dp" android:layout_weight="1"
-            android:layout_marginStart="8dp"
-            android:text="@string/police_toggle" android:textSize="17sp" />
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnBack"
+                android:layout_width="wrap_content" android:layout_height="56dp" android:minWidth="92dp"
+                android:text="@string/back" android:textSize="15sp" />
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnToggleJail"
-            style="@style/Widget.Material3.Button.TonalButton"
-            android:layout_width="0dp" android:layout_height="56dp" android:layout_weight="1"
-            android:layout_marginStart="8dp"
-            android:text="@string/hide_show_jail" android:textSize="17sp" />
-    </LinearLayout>
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnPolice"
+                style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="wrap_content" android:layout_height="56dp" android:minWidth="92dp"
+                android:layout_marginStart="8dp"
+                android:text="@string/police_toggle" android:textSize="15sp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnTwoPlayer"
+                style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="wrap_content" android:layout_height="56dp" android:minWidth="92dp"
+                android:layout_marginStart="8dp"
+                android:text="@string/two_player" android:textSize="15sp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnControls"
+                style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="wrap_content" android:layout_height="56dp" android:minWidth="92dp"
+                android:layout_marginStart="8dp"
+                android:text="@string/controls_toggle" android:textSize="15sp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnToggleJail"
+                style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="wrap_content" android:layout_height="56dp" android:minWidth="92dp"
+                android:layout_marginStart="8dp"
+                android:text="@string/hide_show_jail" android:textSize="15sp" />
+        </LinearLayout>
+    </HorizontalScrollView>
 
     <FrameLayout
         android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1">
@@ -35,11 +55,25 @@
             android:id="@+id/gameView"
             android:layout_width="match_parent" android:layout_height="match_parent" />
 
-        <!-- لوحة الأسهم للتحكم بالشرطي (تظهر في وضع الشرطي فقط) -->
+        <!-- لوحة أسهم الشرطي (اللاعب الأول) -->
         <com.ghostthief.game.game.GameView
             android:id="@+id/padView"
             android:layout_width="150dp" android:layout_height="150dp"
             android:layout_gravity="bottom|left" android:layout_margin="12dp"
+            android:visibility="gone" />
+
+        <!-- لوحة أسهم الحرامي (اللاعب الثاني) + زر الاختباء -->
+        <com.ghostthief.game.game.GameView
+            android:id="@+id/padView2"
+            android:layout_width="150dp" android:layout_height="150dp"
+            android:layout_gravity="bottom|right" android:layout_margin="12dp"
+            android:visibility="gone" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnThiefHide"
+            android:layout_width="wrap_content" android:layout_height="52dp" android:minWidth="130dp"
+            android:layout_gravity="bottom|right" android:layout_marginRight="12dp" android:layout_marginBottom="172dp"
+            android:text="@string/thief_hide" android:textSize="15sp"
             android:visibility="gone" />
     </FrameLayout>
 

@@ -84,6 +84,58 @@ class ThiefBrain(
     fun setAvoid(ax: Float, ay: Float, dist: Float) { avoidX = ax; avoidY = ay; avoidDist = dist }
     fun clearAvoid() { avoidDist = 0f }
 
+    // ---- وضع لاعبين: لاعب ثانٍ يدير الحرامي بلوحة أسهم وزر اختباء ----
+    var manual = false
+        private set
+    private var inX = 0f
+    private var inY = 0f
+    private var hideCooldown = 0f
+    /** اتجاه الإدخال الحالي (لتمييز السهم المضغوط في اللوحة). */
+    val inputX: Float get() = inX
+    val inputY: Float get() = inY
+    /** الثواني المتبقية حتى يمكن الاختباء ثانية. */
+    val hideCooldownSeconds: Float get() = hideCooldown.coerceAtLeast(0f)
+    val hideReady: Boolean get() = manual && hideCooldown <= 0f && (state == ThiefState.RUN || state == ThiefState.STAND)
+
+    fun setManual(on: Boolean) {
+        manual = on; inX = 0f; inY = 0f; hideCooldown = 0f
+        if (on && state != ThiefState.JAILED && state != ThiefState.CAUGHT && state != ThiefState.ARRESTED &&
+            state != ThiefState.HIDDEN && state != ThiefState.FADE_OUT && state != ThiefState.FADE_IN && state != ThiefState.ESCAPING) {
+            abortHeist(); hurtHide = false; startRun()
+        }
+    }
+
+    fun setInput(dx: Float, dy: Float) { inX = dx.coerceIn(-1f, 1f); inY = dy.coerceIn(-1f, 1f) }
+
+    /** زر «اختباء»: يختفي في مجلد لبعض الوقت ثم يظهر بعيداً عن الشرطي. */
+    fun requestHide(): Boolean {
+        if (!hideReady) return false
+        hideCooldown = MANUAL_HIDE_COOLDOWN
+        beginHide()
+        return true
+    }
+
+    private fun isFreeState() = when (state) {
+        ThiefState.RUN, ThiefState.STAND, ThiefState.LOOK, ThiefState.FLEE, ThiefState.SURPRISED,
+        ThiefState.HEIST_GO, ThiefState.SNEAK, ThiefState.GRAB, ThiefState.CARRY, ThiefState.DRAG -> true
+        else -> false
+    }
+
+    private fun manualMove(d: Float) {
+        alpha = 1f; scale = 1f; hideFolderAlpha = 0f
+        val len = hypot(inX, inY)
+        if (len > 0.05f) {
+            state = ThiefState.RUN
+            val v = config.baseSpeedPxPerSec * MANUAL_SPEED_FACTOR * config.speedScale.coerceIn(0.2f, 3f)
+            x += inX / len * v * d; y += inY / len * v * d
+            if (abs(inX) > 0.1f) facing = if (inX > 0) 1 else -1
+            runClock += d * 1.4f
+            val m = margin()
+            x = x.coerceIn(m, (arenaW - m).coerceAtLeast(m))
+            y = y.coerceIn(minY + m, (arenaH - m).coerceAtLeast(minY + m))
+        } else state = ThiefState.STAND
+    }
+
     /** عند true يبقى الحرامي مختبئاً حتى يجده اللاعب (وضع البحث). */
     var holdHidden = false
 
@@ -152,6 +204,8 @@ class ThiefBrain(
         val d = dt.coerceIn(0f, 0.1f)
         stateTime += d
         arrivedInJail = false
+        if (hideCooldown > 0f) hideCooldown -= d
+        if (manual && isFreeState()) { manualMove(d); return } // لا حركة تلقائية: اللاعب الثاني يدير الحرامي
         // الشرطي قريب ويطارده: يلغي السرقة ويهرب (لا يكمل التلفّت عند الأيقونة)
         if (threatened && (state == ThiefState.HEIST_GO || state == ThiefState.SNEAK)) { abortHeist(); startRun() }
         when (state) {
@@ -490,5 +544,8 @@ class ThiefBrain(
         /** مدة التلفّت عند الأيقونة وسحبها داخل الكيس. */
         const val SNEAK_SECONDS = 1.7f
         const val GRAB_SECONDS = 0.6f
+        /** سرعة الحرامي اليدوي نسبةً للسرعة الأساسية (الشرطي أسرع: 260 مقابل ~203) لكن للحرامي زر الاختباء. */
+        const val MANUAL_SPEED_FACTOR = 1.45f
+        const val MANUAL_HIDE_COOLDOWN = 8f
     }
 }

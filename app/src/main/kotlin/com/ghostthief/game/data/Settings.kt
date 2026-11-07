@@ -95,6 +95,11 @@ class Settings(private val kv: KeyValueStore) {
         get() = kv.getInt("play_points_today", 0)
         set(v) = kv.put("play_points_today", v)
 
+    /** إظهار أزرار التحكم (لوحات الأسهم وزر الاختباء) على الشاشة. اختياري: يمكن إخفاؤها لمن يستخدم لوحة مفاتيح أو يد تحكم. */
+    var showControls: Boolean
+        get() = kv.getBoolean("show_controls", true)
+        set(v) = kv.put("show_controls", v)
+
     /** مركبة الشرطة المختارة من المرآب. */
     var vehicleId: String
         get() = kv.getString("vehicle_id", "default") ?: "default"

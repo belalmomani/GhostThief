@@ -103,6 +103,9 @@ class SettingsActivity : BaseActivity() {
 
         col.addView(TextView(this).apply { text = getString(R.string.s_jail_hint); textSize = 13f; setTextColor(0xFF546E7A.toInt()) })
 
+        toggle(R.string.s_show_controls, s.showControls) { s.showControls = it }
+        col.addView(TextView(this).apply { text = getString(R.string.s_show_controls_hint); textSize = 13f; setTextColor(0xFF546E7A.toInt()) })
+
         toggle(R.string.s_sound, s.soundEnabled) { s.soundEnabled = it }
         toggle(R.string.s_effects, s.effectsEnabled) { s.effectsEnabled = it }
         toggle(R.string.s_timer, s.showJailTimer) { s.showJailTimer = it }

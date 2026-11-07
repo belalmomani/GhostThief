@@ -10,7 +10,7 @@ import kotlin.math.sin
 import kotlin.math.min
 import kotlin.random.Random
 
-enum class GameMessage { CAUGHT, CAUGHT_BONUS, ACHIEVEMENT, CIRCLE_FAILED, ESCAPED, TRY_AGAIN, SEEK_START, FOUND, NOT_HERE, OUCH, POLICE_ARREST, STOLEN, RECOVERED, GUARD_START, GUARD_OK, HEIST_START, RESCUED, ESCAPED_LOOT, STASHED, DROPPED_LOOT }
+enum class GameMessage { CAUGHT, CAUGHT_BONUS, ACHIEVEMENT, CIRCLE_FAILED, ESCAPED, TRY_AGAIN, SEEK_START, FOUND, NOT_HERE, OUCH, POLICE_ARREST, STOLEN, RECOVERED, GUARD_START, GUARD_OK, ROUND_POLICE, HEIST_START, RESCUED, ESCAPED_LOOT, STASHED, DROPPED_LOOT }
 
 interface GameListener {
     fun onMessage(msg: GameMessage, points: Int = 0)
@@ -118,6 +118,38 @@ class GameEngine(
     var lastTickMs = 0L
     var paused = false
     private var playAcc = 0f
+
+    // ---- وضع لاعبين على الشاشة نفسها: لاعب يحرّك الشرطي بالأسهم، وآخر يدير الحرامي ----
+    var twoPlayer = false; private set
+    var scorePolice = 0; private set
+    var scoreThief = 0; private set
+    private var thiefAlive = 0f
+
+    /** يشغّل/يطفئ وضع لاعبين. يشغّل الشرطي تلقائياً، ويسلّم الحرامي للاعب الثاني. */
+    fun setTwoPlayer(on: Boolean) {
+        twoPlayer = on
+        if (on) {
+            if (!policeMode) setPoliceMode(true)
+            if (brain.state == ThiefState.JAILED) { // لا ننتظر سجن الـ15 دقيقة في اللعب الثنائي
+                jail.clear(); progress.jailEndAt = 0L
+                brain.escape(arenaW / 2f, arenaH / 2f)
+            }
+            brain.setManual(true)
+            scorePolice = 0; scoreThief = 0; thiefAlive = 0f
+        } else {
+            brain.setInput(0f, 0f); brain.setManual(false)
+        }
+    }
+
+    /** اتجاه لوحة أسهم اللاعب الثاني (الحرامي). */
+    fun thiefDirection(dx: Float, dy: Float) { if (twoPlayer) brain.setInput(dx, dy) else brain.setInput(0f, 0f) }
+
+    /** زر «اختباء» للاعب الثاني. */
+    fun thiefHide(): Boolean {
+        if (!twoPlayer || !brain.requestHide()) return false
+        listener?.onSound(SoundEffect.ESCAPE)
+        return true
+    }
     private var activeViews = 0
 
     /** نافذة (عرض) بدأت العمل. عند أول نافذة يُستأنف المحرك. */
@@ -283,6 +315,10 @@ class GameEngine(
 
     fun update(dt: Float) {
         accruePlayPoints(dt)
+        if (twoPlayer && brain.state != ThiefState.JAILED && brain.state != ThiefState.CAUGHT && brain.state != ThiefState.ARRESTED) {
+            thiefAlive += dt // نقطة للحرامي لكل 10 ثوانٍ يبقى فيها حراً
+            if (thiefAlive >= 10f) { thiefAlive -= 10f; scoreThief++ }
+        }
         updateJailGuard(dt)
         if (pointerDown && downOnThief && !moved && downTime >= 0f) {
             downTime += dt
@@ -425,7 +461,7 @@ class GameEngine(
 
     private fun updateHeist(dt: Float) {
         for (ic in sceneIcons) if (ic.pop > 0f) ic.pop = maxOf(0f, ic.pop - dt * 1.5f)
-        if (settings.heistEnabled && !compact && targetIcon == null && sceneIcons.any { !it.stolen } &&
+        if (settings.heistEnabled && !compact && !twoPlayer && targetIcon == null && sceneIcons.any { !it.stolen } &&
             brain.state == ThiefState.RUN && !seekActive && !isJailed()) {
             heistTimer -= dt
             if (heistTimer <= 0f) startHeist()
@@ -461,7 +497,7 @@ class GameEngine(
         if (progress.unlock(a.id)) listener?.onMessage(GameMessage.ACHIEVEMENT, 1)
     }
 
-    private fun seekAvailable() = settings.seekEnabled && seekNames.isNotEmpty() && !compact
+    private fun seekAvailable() = settings.seekEnabled && seekNames.isNotEmpty() && !compact && !twoPlayer
 
     private fun maybeStartSeek() {
         if (!seekAvailable()) return
@@ -628,8 +664,14 @@ class GameEngine(
         val ok = if (source == CaptureSource.POLICE) brain.deliverToJail(jailCenterX(), jailCenterY())
                  else brain.capture(jailCenterX(), jailCenterY())
         if (!ok) { capture.finish(); return false }
-        jail.start(settings.jailMinutes * 60_000L)
-        progress.jailEndAt = jail.endAtMillis
+        if (twoPlayer) { // جولة قصيرة: 10 ثوانٍ في السجن ثم يهرب، ولا يُحفظ وقت السجن
+            jail.start(TWO_PLAYER_JAIL_MS)
+            scorePolice++
+            listener?.onMessage(GameMessage.ROUND_POLICE)
+        } else {
+            jail.start(settings.jailMinutes * 60_000L)
+            progress.jailEndAt = jail.endAtMillis
+        }
         guardPointsGiven = 0; jailPickCount = 0; jailNextPick = 5f; jailPickActive = false
         if (source != CaptureSource.POLICE) recoverStolen()
         val reward = progress.recordCapture(source == CaptureSource.CIRCLE)
@@ -647,6 +689,7 @@ class GameEngine(
         const val SEEK_BONUS = 5
         const val MAX_SCENE_ICONS = 8
         const val GUARD_PICK_SECONDS = 2.6f
+        const val TWO_PLAYER_JAIL_MS = 10_000L
         const val GUARD_POINTS_MAX = 20
     }
 }

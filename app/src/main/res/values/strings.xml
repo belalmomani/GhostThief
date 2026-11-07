@@ -191,4 +191,5 @@
     <string name="garage_ad_reward_toast">حصلتَ على +%1$d نقطة</string>
     <string name="msg_guard_start">الحرامي يحاول فتح القفل! اضغط على السجن لتمنعه</string>
     <string name="msg_guard_ok">أحسنت! منعتَ محاولة هروب (+1)</string>
+    <string name="two_player">لاعبان</string>\n    <string name="two_player_on">لاعبان (يعمل)</string>\n    <string name="two_player_hint">لاعبان: الأول يحرّك الشرطي بالأسهم اليسرى، والثاني يدير الحرامي بالأسهم اليمنى وزر «اختباء». يُسجن الحرامي 10 ثوانٍ فقط في كل جولة.</string>\n    <string name="controls_toggle">الأزرار</string>\n    <string name="thief_hide">اختباء</string>\n    <string name="thief_hide_wait">اختباء (%1$d)</string>\n    <string name="hud_two_player">الشرطي %1$d : %2$d الحرامي</string>\n    <string name="msg_round_police">فاز الشرطي بهذه الجولة!</string>\n    <string name="s_show_controls">إظهار أزرار التحكم (الأسهم وزر الاختباء) على الشاشة</string>\n    <string name="s_show_controls_hint">يمكن إخفاؤها لمن يستخدم لوحة مفاتيح أو يد تحكم: الأسهم للشرطي، وWASD للحرامي، والمسافة للاختباء.</string>
 </resources>

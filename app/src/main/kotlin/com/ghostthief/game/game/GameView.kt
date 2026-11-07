@@ -27,7 +27,7 @@ import kotlin.random.Random
 class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? = null) :
     View(context, attrs), Choreographer.FrameCallback, GameListener {
 
-    enum class Role { FULL, ACTOR, JAIL, OFFICER, CAR, PAD }
+    enum class Role { FULL, ACTOR, JAIL, OFFICER, CAR, PAD, PAD2 }
     var role = Role.FULL
 
     var engine: GameEngine? = null
@@ -46,6 +46,7 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
     /** زر الشرطي على نافذة السجن (الوضع العائم): تشغيل/إيقاف وضع الشرطي. */
     var onPoliceToggle: (() -> Unit)? = null
     private fun ownsListener() = role == Role.FULL || role == Role.ACTOR
+    private fun isPad() = role == Role.PAD || role == Role.PAD2
     var onJailDrag: ((Float, Float) -> Unit)? = null
     var onJailDragEnd: (() -> Unit)? = null
 
@@ -83,7 +84,7 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
 
     fun start() {
         if (running) return
-        if (role != Role.PAD && sprites == null) sprites = Sprites.acquire(context)
+        if (!isPad() && sprites == null) sprites = Sprites.acquire(context)
         if (fx == null && ownsListener()) engine?.let { fx = SoundFx(context, it.settings) }
         running = true
         engine?.viewStarted() // عدّاد النوافذ العاملة: المحرك لا يتوقف إلا إذا توقفت كلها
@@ -116,7 +117,7 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
     override fun doFrame(frameTimeNanos: Long) {
         if (!running) return
         val e = engine
-        if (e != null && role == Role.PAD) { // لوحة الأسهم: إعادة رسم خفيفة فقط (المحرك تُحدّثه النوافذ الأخرى)
+        if (e != null && isPad()) { // لوحة الأسهم: إعادة رسم خفيفة فقط (المحرك تُحدّثه النوافذ الأخرى)
             val nowMs = frameTimeNanos / 1_000_000L
             if (nowMs - lastInvalidate >= 100L) { lastInvalidate = nowMs; invalidate() }
         } else if (e != null) {
@@ -166,6 +167,7 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
             GameMessage.RECOVERED -> context.getString(R.string.msg_recovered, points)
             GameMessage.GUARD_START -> context.getString(R.string.msg_guard_start)
             GameMessage.GUARD_OK -> context.getString(R.string.msg_guard_ok)
+            GameMessage.ROUND_POLICE -> context.getString(R.string.msg_round_police)
             GameMessage.STOLEN, GameMessage.HEIST_START, GameMessage.RESCUED, GameMessage.ESCAPED_LOOT,
             GameMessage.STASHED, GameMessage.DROPPED_LOOT -> ""
         }
@@ -216,7 +218,7 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
     // ---- الرسم ----
     override fun onDraw(c: Canvas) {
         val e = engine ?: return
-        if (role == Role.PAD) { drawPad(c, e); return }
+        if (isPad()) { drawPad(c, e); return }
         val sp = sprites ?: return
         when (role) {
             Role.FULL -> {
@@ -225,6 +227,7 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
                 drawActors(c, e, sp) // ترتيب العمق: الأدنى على الشاشة يُرسم أمام
                 drawDraggedLoot(c, e)
                 drawStolenBadge(c, e)
+                drawScoreboard(c, e)
                 drawTrail(c, e)
                 drawParticles(c)
                 drawMessage(c)
@@ -248,7 +251,7 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
                 drawOfficer(c, e.squad, sp)
                 c.restore()
             }
-            Role.PAD -> {}
+            Role.PAD, Role.PAD2 -> {}
             Role.CAR -> if (e.policeActive && e.squad.carVisible) {
                 c.save(); c.translate(-originX, -originY)
                 drawCar(c, e.squad, sp, e.vehicle)
@@ -326,19 +329,24 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
     // ---- لوحة الأسهم للتحكم بالشرطي ----
     private val padDirs = arrayOf(-1f to 0f, -1f to -1f, 0f to -1f, 1f to -1f, 1f to 0f, 1f to 1f, 0f to 1f, -1f to 1f)
 
+    /** لوحة الشرطي ترسل للشرطي، ولوحة اللاعب الثاني ترسل للحرامي. */
+    private fun sendPad(e: GameEngine, dx: Float, dy: Float) {
+        if (role == Role.PAD2) e.thiefDirection(dx, dy) else e.policeDirection(dx, dy)
+    }
+
     private fun padTouch(ev: MotionEvent, e: GameEngine): Boolean {
         when (ev.actionMasked) {
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_MOVE -> {
                 val cx = width / 2f; val cy = height / 2f
                 val dx = ev.x - cx; val dy = ev.y - cy
-                if (hypot(dx.toDouble(), dy.toDouble()) < width * 0.14) { e.policeDirection(0f, 0f); return true }
+                if (hypot(dx.toDouble(), dy.toDouble()) < width * 0.14) { sendPad(e, 0f, 0f); return true }
                 val ang = kotlin.math.atan2(dy.toDouble(), dx.toDouble())
                 val k = Math.round((ang + Math.PI) / (Math.PI / 4)).toInt() % 8
                 var (ddx, ddy) = padDirs[k]
                 if (ddx != 0f && ddy != 0f) { ddx *= 0.7071f; ddy *= 0.7071f }
-                e.policeDirection(ddx, ddy)
+                sendPad(e, ddx, ddy)
             }
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> e.policeDirection(0f, 0f)
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> sendPad(e, 0f, 0f)
         }
         return true
     }
@@ -347,9 +355,11 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
     private fun drawPad(c: Canvas, e: GameEngine) {
         val w = width.toFloat(); val h = height.toFloat()
         val cx = w / 2f; val cy = h / 2f; val r = minOf(w, h) / 2f
-        p.style = Paint.Style.FILL; p.color = Color.argb(70, 20, 50, 110)
+        p.style = Paint.Style.FILL; p.color = if (thiefPad) Color.argb(90, 40, 40, 48) else Color.argb(70, 20, 50, 110)
         c.drawCircle(cx, cy, r * 0.97f, p)
-        val dx = e.squad.dirX; val dy = e.squad.dirY
+        val thiefPad = role == Role.PAD2
+        val dx = if (thiefPad) e.brain.inputX else e.squad.dirX
+        val dy = if (thiefPad) e.brain.inputY else e.squad.dirY
         val arrows = listOf(0f to -1f, 0f to 1f, -1f to 0f, 1f to 0f)
         for ((ax, ay) in arrows) {
             val on = (ax != 0f && dx * ax > 0.3f) || (ay != 0f && dy * ay > 0.3f)
@@ -637,6 +647,18 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
         drawLootCard(c, ic.loot, b.lootX, b.lootY, 1.15f, 1f)
     }
 
+    /** لوحة نتيجة وضع لاعبين: الشرطي : الحرامي. */
+    private fun drawScoreboard(c: Canvas, e: GameEngine) {
+        if (!e.twoPlayer) return
+        val t = context.getString(R.string.hud_two_player, e.scorePolice, e.scoreThief)
+        textPaint.textSize = 15f * density; textPaint.color = Color.WHITE
+        val w = textPaint.measureText(t) + 28f * density
+        val l = (width - w) / 2f; val top = 8f * density
+        p.style = Paint.Style.FILL; p.color = Color.argb(215, 30, 70, 150)
+        c.drawRoundRect(l, top, l + w, top + 30f * density, 15f * density, 15f * density, p)
+        c.drawText(t, width / 2f, top + 21f * density, textPaint)
+    }
+
     /** شارة عدد المسروقات في الكيس (تعود كلها عند القبض على الحرامي). */
     private fun drawStolenBadge(c: Canvas, e: GameEngine) {
         val n = e.stolenCount
@@ -764,7 +786,7 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
         val e = engine ?: return false
         if (role == Role.JAIL) return jailTouch(ev, e)
         if (role == Role.CAR) return false
-        if (role == Role.PAD) return padTouch(ev, e)
+        if (isPad()) return padTouch(ev, e)
         // في النافذة العائمة نستخدم إحداثيات الشاشة المطلقة (الساحة = الشاشة)
         val x = if (role == Role.FULL) ev.x else ev.rawX
         val y = if (role == Role.FULL) ev.y else ev.rawY
