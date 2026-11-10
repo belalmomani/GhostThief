@@ -355,9 +355,9 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
     private fun drawPad(c: Canvas, e: GameEngine) {
         val w = width.toFloat(); val h = height.toFloat()
         val cx = w / 2f; val cy = h / 2f; val r = minOf(w, h) / 2f
+        val thiefPad = role == Role.PAD2
         p.style = Paint.Style.FILL; p.color = if (thiefPad) Color.argb(90, 40, 40, 48) else Color.argb(70, 20, 50, 110)
         c.drawCircle(cx, cy, r * 0.97f, p)
-        val thiefPad = role == Role.PAD2
         val dx = if (thiefPad) e.brain.inputX else e.squad.dirX
         val dy = if (thiefPad) e.brain.inputY else e.squad.dirY
         val arrows = listOf(0f to -1f, 0f to 1f, -1f to 0f, 1f to 0f)
