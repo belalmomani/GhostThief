@@ -65,10 +65,15 @@ class TwoPlayerTest {
         val env = Env(); val e = env.engine(); e.setTwoPlayer(true)
         e.brain.x = 300f; e.brain.y = 300f; e.squad.place(300f, 300f); chase(e)
         advanceEngine(e, 0.1f); assertEquals(ThiefState.ARRESTED, e.brain.state)
-        advanceEngine(e, 20f)
+        advanceEngine(e, 8f)                                                   // تأتي المركبة وتُسلّم الحرامي
+        assertTrue(e.brain.state == ThiefState.JAILED || e.brain.state == ThiefState.CAUGHT)
         assertEquals(1, e.scorePolice)
         assertEquals(0L, env.repo.jailEndAt)                                  // لا يُحفظ وقت السجن الطويل
+        // مدة السجن تُقاس بساعة اللعبة (Clock) لا بخطوات المحاكاة، فنقدّم الساعة 10 ثوانٍ
+        env.clock.now += GameEngine.TWO_PLAYER_JAIL_MS + 500L
+        advanceEngine(e, 3f)
         assertTrue(e.brain.state == ThiefState.RUN || e.brain.state == ThiefState.STAND) // هرب بعد 10 ثوانٍ فقط
+        assertEquals(1, e.scorePolice)
     }
 
     @Test fun thiefSurvivalScore_oneForEveryTenSeconds() {
