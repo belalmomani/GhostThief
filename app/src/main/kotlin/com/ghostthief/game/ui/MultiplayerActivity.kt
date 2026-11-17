@@ -337,8 +337,11 @@ class MultiplayerActivity : BaseActivity() {
             .setNegativeButton(R.string.cancel, null).show()
     }
 
-    private fun join(host: String, port: Int, code: String) {
-        if (host.isEmpty() || code.length != 4) { status.text = getString(R.string.net_code_hint); return }
+    private fun join(rawHost: String, port: Int, rawCode: String) {
+        // الكيبورد العربي قد يكتب أرقاماً هندية (١٩٢.١٦٨…): نحوّلها إلى لاتينية قبل الاتصال
+        val host = NetUtil.normalizeDigits(rawHost)
+        val code = NetUtil.normalizeDigits(rawCode)
+        if (host.isEmpty() || code.length != 4 || !code.all { it in '0'..'9' }) { status.text = getString(R.string.net_code_hint); return }
         status.text = getString(R.string.net_connecting)
         Thread {
             val r = NetClient.connect(host, code, build, port, NetSession::onPacket, NetSession::onClosed)

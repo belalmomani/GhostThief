@@ -13,14 +13,16 @@ import java.security.SecureRandom
 object Handshake {
     enum class Result { OK, BAD_CODE, REJECTED }
 
-    /** يقرأ Hello من الضيف ويردّ بـ Welcome أو Reject. قد يرمي IOException عند فشل القناة. */
+    /** يقرأ Hello من الضيف ويردّ بـ Welcome أو Reject. [build] لا يُستخدم للرفض (يبقى للتوافق مع الاستدعاءات). قد يرمي IOException. */
     fun serve(inp: DataInputStream, out: DataOutputStream, code: String, hostRole: Int, build: Int): Result {
         val hello = Codec.read(inp) as? Packet.Hello
         val (result, reason) = when {
             hello == null -> Result.REJECTED to "طلب غير صحيح"
-            hello.version != NetProtocol.VERSION || hello.build != build ->
+            // التوافق = رقم البروتوكول فقط: هاتفان ببناءين مختلفين (أو نسختين ads/noads) يلعبان معاً.
+            // ارفع NetProtocol.VERSION كلما تغيّر شكل لقطة الحالة (NetIdx) أو الرسائل.
+            hello.version != NetProtocol.VERSION ->
                 Result.REJECTED to "الإصدار مختلف: حدّث اللعبة على الهاتفين"
-            hello.code != code -> Result.BAD_CODE to "الرمز غير صحيح"
+            NetUtil.normalizeDigits(hello.code) != NetUtil.normalizeDigits(code) -> Result.BAD_CODE to "الرمز غير صحيح"
             else -> Result.OK to null
         }
         if (reason != null) {
@@ -166,5 +168,21 @@ object NetUtil {
         return out
     }
 
-    fun randomCode(): String = "%04d".format(SecureRandom().nextInt(10_000))
+    /** رمز من 4 أرقام لاتينية دائماً (String.format يتبع لغة الهاتف فيعطي أرقاماً هندية ٠١٢٣ على الهاتف العربي). */
+    fun randomCode(): String {
+        val r = SecureRandom()
+        return buildString { repeat(4) { append('0' + r.nextInt(10)) } }
+    }
+
+    /** يحوّل الأرقام الهندية/الفارسية (٠١٢٣ ۰۱۲۳) والفاصلة العربية إلى أرقام ونقاط لاتينية، ويحذف المسافات الطرفية. */
+    fun normalizeDigits(s: String): String = buildString(s.length) {
+        for (c in s.trim()) append(
+            when (c) {
+                in '\u0660'..'\u0669' -> '0' + (c - '\u0660')
+                in '\u06F0'..'\u06F9' -> '0' + (c - '\u06F0')
+                '\u066B', '\u06D4' -> '.'
+                else -> c
+            }
+        )
+    }
 }

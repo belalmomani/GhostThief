@@ -13,6 +13,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # رقم إصدار يزيد دائماً (وقت آخر commit) فيُقبل كتحديث حتى لو أنشأتَ مستودعاً جديداً
+      - name: Build number from commit time
+        run: echo "GT_BUILD_MINUTES=$(( ($(git log -1 --format=%ct) - 1767225600) / 60 ))" >> "$GITHUB_ENV"
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -92,6 +96,10 @@ jobs:
     continue-on-error: true   # لا يُفشل المشروع إن تغيّر SDK الإعلانات
     steps:
       - uses: actions/checkout@v4
+
+      # رقم إصدار يزيد دائماً (وقت آخر commit) فيُقبل كتحديث حتى لو أنشأتَ مستودعاً جديداً
+      - name: Build number from commit time
+        run: echo "GT_BUILD_MINUTES=$(( ($(git log -1 --format=%ct) - 1767225600) / 60 ))" >> "$GITHUB_ENV"
       - uses: actions/setup-java@v4
         with:
           distribution: temurin

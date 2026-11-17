@@ -10,7 +10,7 @@ data class QrPayload(val host: String, val port: Int, val code: String) {
     companion object {
         fun parse(text: String?): QrPayload? {
             if (text == null) return null
-            val parts = text.trim().split("|")
+            val parts = NetUtil.normalizeDigits(text).split("|")
             if (parts.size != 4 || parts[0] != "GT1") return null
             val host = parts[1]
             val port = parts[2].toIntOrNull() ?: return null

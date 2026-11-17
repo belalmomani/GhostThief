@@ -6,6 +6,7 @@ import com.ghostthief.game.net.HostServer
 import com.ghostthief.game.net.NetClient
 import com.ghostthief.game.net.NetLink
 import com.ghostthief.game.net.NetProtocol
+import com.ghostthief.game.net.NetUtil
 import com.ghostthief.game.net.Packet
 import com.ghostthief.game.net.QrPayload
 import org.junit.Assert.*
@@ -56,6 +57,32 @@ class NetTest {
         assertNull(QrPayload.parse("GT1|192.168.1.5|47654|4821|x"))
     }
 
+    // ---------- الأرقام العربية ----------
+    @Test fun normalizeDigits_convertsArabicIndicAndPersian() {
+        assertEquals("0482", NetUtil.normalizeDigits("٠٤٨٢"))
+        assertEquals("0482", NetUtil.normalizeDigits("۰۴۸۲"))
+        assertEquals("192.168.1.5", NetUtil.normalizeDigits(" ١٩٢.١٦٨.١.٥ "))
+        assertEquals("192.168.1.5", NetUtil.normalizeDigits("١٩٢٫١٦٨٫١٫٥"))
+        assertEquals("GT1|192.168.1.5|47654|0482", NetUtil.normalizeDigits("GT1|١٩٢.١٦٨.١.٥|٤٧٦٥٤|٠٤٨٢"))
+    }
+
+    @Test fun randomCode_isAlwaysFourLatinDigits_evenInArabicLocale() {
+        val old = java.util.Locale.getDefault()
+        try {
+            java.util.Locale.setDefault(java.util.Locale("ar", "SA"))
+            repeat(300) { assertTrue(NetUtil.randomCode().matches(Regex("[0-9]{4}"))) }
+        } finally { java.util.Locale.setDefault(old) }
+    }
+
+    @Test fun qr_acceptsArabicDigitsAfterNormalizing() {
+        assertEquals(QrPayload("192.168.1.5", 47654, "0482"), QrPayload.parse("GT1|192.168.1.5|47654|٠٤٨٢"))
+    }
+
+    @Test fun handshake_acceptsArabicDigitCode() {
+        val (r, _) = serveWith(Packet.Hello(NetProtocol.VERSION, 5, "٠٤٨٢"), code = "0482")
+        assertEquals(Handshake.Result.OK, r)
+    }
+
     // ---------- الترميز ----------
     @Test fun codec_snapshotRoundTrip() {
         val snap = Packet.Snapshot(FloatArray(31) { it * 0.5f }, IntArray(20) { it * 3 }, "police_car")
@@ -85,13 +112,14 @@ class NetTest {
         assertEquals(NetProtocol.ROLE_THIEF, (reply as Packet.Welcome).hostRole)
     }
 
-    @Test fun handshake_rejectsWrongCodeAndWrongBuild() {
+    @Test fun handshake_rejectsWrongCodeAndWrongProtocol_butAcceptsDifferentBuild() {
         val (r1, p1) = serveWith(Packet.Hello(NetProtocol.VERSION, 5, "0000"))
         assertEquals(Handshake.Result.BAD_CODE, r1); assertTrue(p1 is Packet.Reject)
-        val (r2, p2) = serveWith(Packet.Hello(NetProtocol.VERSION, 6, "BT"))
+        val (r2, p2) = serveWith(Packet.Hello(NetProtocol.VERSION + 1, 5, "BT"))
         assertEquals(Handshake.Result.REJECTED, r2); assertTrue(p2 is Packet.Reject)
-        val (r3, _) = serveWith(Packet.Hello(NetProtocol.VERSION + 1, 5, "BT"))
-        assertEquals(Handshake.Result.REJECTED, r3)
+        // بناء مختلف (مثلاً هاتف لم يُحدَّث بعد أو نسخة ads مقابل noads) مقبول ما دام البروتوكول نفسه
+        val (r3, p3) = serveWith(Packet.Hello(NetProtocol.VERSION, 6, "BT"))
+        assertEquals(Handshake.Result.OK, r3); assertTrue(p3 is Packet.Welcome)
     }
 
     // ---------- TCP على المضيف المحلي ----------
@@ -125,15 +153,16 @@ class NetTest {
         r.link!!.close(); host.guestLink.get()!!.close()
     }
 
-    @Test fun tcp_wrongCodeAndWrongBuildAreRejected() {
+    @Test fun tcp_wrongCodeIsRejected_differentBuildJoins() {
         val host = Host("1234", NetProtocol.ROLE_THIEF, 9)
         val port = host.startAndWait()
         val bad = NetClient.connect("127.0.0.1", "9999", 9, port, {}, {})
         assertNull(bad.link); assertNotNull(bad.error)
-        val old = NetClient.connect("127.0.0.1", "1234", 8, port, {}, {})
-        assertNull(old.link); assertNotNull(old.error)
         assertNull(host.guestLink.get())
-        host.server.stop()
+        val otherBuild = NetClient.connect("127.0.0.1", "1234", 8, port, {}, {})
+        assertNull(otherBuild.error); assertNotNull(otherBuild.link)
+        assertTrue(waitFor { host.guestLink.get() != null })
+        otherBuild.link!!.close(); host.guestLink.get()!!.close()
     }
 
     @Test fun tcp_roomClosesAfterTooManyWrongCodes() {

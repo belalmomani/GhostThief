@@ -11,8 +11,13 @@ if (hasFirebase) {
 
 // التوقيع بمفتاحك الخاص: يُفعَّل فقط إذا وُجدت متغيرات البيئة (يضبطها GitHub Actions من الأسرار).
 // لا تضع ملف المفتاح ولا كلمات المرور في المستودع أبداً.
-// رقم الإصدار يزيد تلقائياً مع كل بناء على GitHub (GITHUB_RUN_NUMBER) فيُثبَّت كتحديث فوق القديم.
+// رقم الاسم للعرض فقط (GITHUB_RUN_NUMBER). يعود إلى 1 في أي مستودع جديد، فلا نعتمد عليه في versionCode.
 val runNumber = (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toIntOrNull() ?: 1
+
+// versionCode يعتمد على وقت آخر commit (دقائق منذ 2026-01-01، يضبطه workflow في GT_BUILD_MINUTES).
+// يزيد دائماً مهما كان المستودع أو عدّاد GitHub، فيُقبل البناء الجديد كتحديث فوق القديم بلا حذف.
+val buildMinutes: Int = System.getenv("GT_BUILD_MINUTES")?.toIntOrNull()
+    ?: ((System.currentTimeMillis() / 60_000L) - 29_453_760L).toInt().coerceAtLeast(1)
 
 val keystorePath: String? = System.getenv("KEYSTORE_PATH")
 val hasKeystore = !keystorePath.isNullOrBlank() && file(keystorePath).exists()
@@ -28,7 +33,7 @@ android {
         applicationId = "com.ghostthief.game"
         minSdk = 24
         targetSdk = 34
-        versionCode = runNumber * 10
+        versionCode = buildMinutes * 10
         versionName = "0.3.$runNumber"
         buildConfigField("boolean", "FIREBASE_CONFIGURED", hasFirebase.toString())
     }
@@ -40,14 +45,14 @@ android {
         // النسخة الافتراضية: بلا إعلانات ولا أي SDK إعلاني (الأنسب لألعاب الأطفال)
         create("noads") {
             dimension = "ads"
-            versionCode = runNumber * 10
+            versionCode = buildMinutes * 10
             buildConfigField("boolean", "ADS_ENABLED", "false")
             buildConfigField("String", "STARTIO_APP_ID", "\"\"")
         }
         // نسخة تجريبية مع Start.io (وضع child-directed مفعّل في الـ manifest الخاص بها)
         create("ads") {
             dimension = "ads"
-            versionCode = runNumber * 10 + 1
+            versionCode = buildMinutes * 10 + 1
             buildConfigField("boolean", "ADS_ENABLED", "true")
             val appId = (project.findProperty("STARTIO_APP_ID") as String?) ?: ""
             buildConfigField("String", "STARTIO_APP_ID", "\"$appId\"")
@@ -75,8 +80,9 @@ android {
 
     buildTypes {
         debug {
-            // مفتاحك (إن وُجد في الأسرار) وإلا المفتاح التجريبي الثابت
-            signingConfig = signingConfigs.getByName(if (hasKeystore) "release" else "stable")
+            // دائماً المفتاح الثابت المضمّن: لا حاجة لأي أسرار، والتوقيع نفسه في كل مستودع وكل بناء
+            // (نسخة release الموقّعة بمفتاحك الخاص لـ Google Play تبقى بالأسرار كما هي).
+            signingConfig = signingConfigs.getByName("stable")
         }
         release {
             if (hasKeystore) signingConfig = signingConfigs.getByName("release")
