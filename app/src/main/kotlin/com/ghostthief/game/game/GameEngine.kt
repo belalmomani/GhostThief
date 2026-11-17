@@ -3,6 +3,8 @@ package com.ghostthief.game.game
 import com.ghostthief.game.data.ProgressRepository
 import com.ghostthief.game.data.Settings
 import com.ghostthief.game.logic.*
+import com.ghostthief.game.net.NetProtocol
+import com.ghostthief.game.net.Packet
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.hypot
@@ -119,6 +121,62 @@ class GameEngine(
     var paused = false
     private var playAcc = 0f
 
+    // ---- لعب عبر الشبكة (هاتفان) ----
+    /** true على هاتف الضيف: لا محاكاة هنا، فقط عرض ما يصل من المضيف. */
+    var remoteClient = false
+    /** يرسل إدخال الضيف إلى المضيف: (هل هو الحرامي؟، dx، dy). */
+    var inputSink: ((Boolean, Float, Float) -> Unit)? = null
+    var hideSink: (() -> Unit)? = null
+    private var remoteHideReady = false
+    private var remoteHideCooldown = 0f
+    private var remoteJailMs = 0
+    private var remoteJailActive = false
+
+    fun thiefHideReady(): Boolean = if (remoteClient) remoteHideReady else brain.hideReady
+    fun thiefHideCooldown(): Float = if (remoteClient) remoteHideCooldown else brain.hideCooldownSeconds
+    fun jailRemainingMillis(): Long = if (remoteClient) remoteJailMs.toLong() else jail.remainingMillis()
+    fun jailTimerActive(): Boolean = if (remoteClient) remoteJailActive else jail.isJailed
+
+    /** لقطة حالة اللعبة لإرسالها للهاتف الآخر. */
+    fun toSnapshot(): Packet.Snapshot {
+        val f = FloatArray(NetIdx.F_COUNT); val i = IntArray(NetIdx.I_COUNT)
+        brain.writeSnapshot(f, i); squad.writeSnapshot(f, i)
+        f[NetIdx.F_JAIL_FX] = jailL / arenaW; f[NetIdx.F_JAIL_FY] = jailT / arenaH
+        f[NetIdx.F_JAIL_PICK_TIME] = jailPickTime; f[NetIdx.F_JAIL_CLOCK] = jailClock
+        i[NetIdx.I_JAIL_VISIBLE] = if (settings.jailVisible) 1 else 0
+        i[NetIdx.I_JAIL_PICK] = if (jailPickActive) 1 else 0
+        i[NetIdx.I_SCORE_POLICE] = scorePolice; i[NetIdx.I_SCORE_THIEF] = scoreThief
+        i[NetIdx.I_POLICE_ACTIVE] = if (policeActive) 1 else 0; i[NetIdx.I_TWO_PLAYER] = if (twoPlayer) 1 else 0
+        i[NetIdx.I_JAIL_REMAINING_MS] = jail.remainingMillis().coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+        i[NetIdx.I_JAIL_ACTIVE] = if (jail.isJailed) 1 else 0
+        return Packet.Snapshot(f, i, vehicle.id)
+    }
+
+    /** يطبّق لقطة قادمة من المضيف (على هاتف الضيف). الأحجام تُحسب محلياً، والمواضع كنسب من الساحة. */
+    fun applyRemoteSnapshot(s: Packet.Snapshot) {
+        if (s.f.size < NetIdx.F_COUNT || s.i.size < NetIdx.I_COUNT) return
+        brain.applyRemote(s.f, s.i); squad.applyRemote(s.f, s.i)
+        jailL = s.f[NetIdx.F_JAIL_FX] * arenaW; jailT = s.f[NetIdx.F_JAIL_FY] * arenaH
+        jailPickTime = s.f[NetIdx.F_JAIL_PICK_TIME]; jailClock = s.f[NetIdx.F_JAIL_CLOCK]
+        jailPickActive = s.i[NetIdx.I_JAIL_PICK] == 1
+        scorePolice = s.i[NetIdx.I_SCORE_POLICE]; scoreThief = s.i[NetIdx.I_SCORE_THIEF]
+        policeMode = s.i[NetIdx.I_POLICE_ACTIVE] == 1; twoPlayer = s.i[NetIdx.I_TWO_PLAYER] == 1
+        remoteHideReady = s.i[NetIdx.I_HIDE_READY] == 1; remoteHideCooldown = s.f[NetIdx.F_HIDE_COOLDOWN]
+        remoteJailMs = s.i[NetIdx.I_JAIL_REMAINING_MS]; remoteJailActive = s.i[NetIdx.I_JAIL_ACTIVE] == 1
+        if (vehicle.id != s.vehicle) { vehicle = Vehicles.byId(s.vehicle); applyVehicleSize() }
+    }
+
+    /** حدث (رسالة/صوت) من المضيف يُعرض عند الضيف. */
+    fun deliverRemoteEvent(ev: Packet.Event) {
+        val l = listener ?: return
+        when (ev.kind) {
+            NetProtocol.EV_MESSAGE -> GameMessage.values().getOrNull(ev.a)?.let { l.onMessage(it, ev.b) }
+            NetProtocol.EV_LOOT_MESSAGE -> GameMessage.values().getOrNull(ev.a)?.let { l.onLootMessage(it, ev.text, ev.b) }
+            NetProtocol.EV_SOUND -> SoundEffect.values().getOrNull(ev.a)?.let { l.onSound(it) }
+            NetProtocol.EV_LOOP -> LoopSound.values().getOrNull(ev.a)?.let { l.onLoop(it, ev.b == 1, ev.c) }
+        }
+    }
+
     // ---- وضع لاعبين على الشاشة نفسها: لاعب يحرّك الشرطي بالأسهم، وآخر يدير الحرامي ----
     var twoPlayer = false; private set
     var scorePolice = 0; private set
@@ -142,10 +200,14 @@ class GameEngine(
     }
 
     /** اتجاه لوحة أسهم اللاعب الثاني (الحرامي). */
-    fun thiefDirection(dx: Float, dy: Float) { if (twoPlayer) brain.setInput(dx, dy) else brain.setInput(0f, 0f) }
+    fun thiefDirection(dx: Float, dy: Float) {
+        if (remoteClient) { inputSink?.invoke(true, dx, dy); return }
+        if (twoPlayer) brain.setInput(dx, dy) else brain.setInput(0f, 0f)
+    }
 
     /** زر «اختباء» للاعب الثاني. */
     fun thiefHide(): Boolean {
+        if (remoteClient) { hideSink?.invoke(); return true }
         if (!twoPlayer || !brain.requestHide()) return false
         listener?.onSound(SoundEffect.ESCAPE)
         return true
@@ -216,6 +278,7 @@ class GameEngine(
 
     /** اتجاه الأسهم للتحكم بالشرطي (0,0 = وقوف). */
     fun policeDirection(dx: Float, dy: Float) {
+        if (remoteClient) { inputSink?.invoke(false, dx, dy); return }
         if (policeActive) squad.setDirection(dx, dy) else squad.setDirection(0f, 0f)
     }
 
@@ -314,6 +377,7 @@ class GameEngine(
     }
 
     fun update(dt: Float) {
+        if (remoteClient) { brain.remoteStep(dt); squad.remoteStep(dt); return } // الضيف لا يحاكي: يعرض ما يصله
         accruePlayPoints(dt)
         if (twoPlayer && brain.state != ThiefState.JAILED && brain.state != ThiefState.CAUGHT && brain.state != ThiefState.ARRESTED) {
             thiefAlive += dt // نقطة للحرامي لكل 10 ثوانٍ يبقى فيها حراً
@@ -574,6 +638,7 @@ class GameEngine(
     }
 
     fun touchDown(x: Float, y: Float) {
+        if (remoteClient) return
         if (handleSeekTap(x, y)) return
         // سحب السجن إلى أي مكان يريده اللاعب (لا يبدأ إن كان اللمس على الحرامي نفسه)
         if (brain.state != ThiefState.HELD && !hitsThief(x, y) && hitsJail(x, y)) {

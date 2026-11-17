@@ -48,6 +48,12 @@
             android:layout_width="match_parent" android:layout_height="56dp"
             android:layout_marginTop="8dp" android:text="@string/kid_mode" android:textSize="17sp" />
 
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnNetwork"
+            style="@style/Widget.Material3.Button.TonalButton"
+            android:layout_width="match_parent" android:layout_height="56dp"
+            android:layout_marginTop="8dp" android:text="@string/net_main_btn" android:textSize="17sp" />
+
         <com.google.android.material.materialswitch.MaterialSwitch
             android:id="@+id/swFloating"
             android:layout_width="match_parent" android:layout_height="wrap_content"

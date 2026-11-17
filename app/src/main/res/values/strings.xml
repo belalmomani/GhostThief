@@ -192,4 +192,50 @@
     <string name="msg_guard_start">الحرامي يحاول فتح القفل! اضغط على السجن لتمنعه</string>
     <string name="msg_guard_ok">أحسنت! منعتَ محاولة هروب (+1)</string>
     <string name="two_player">لاعبان</string>\n    <string name="two_player_on">لاعبان (يعمل)</string>\n    <string name="two_player_hint">لاعبان: الأول يحرّك الشرطي بالأسهم اليسرى، والثاني يدير الحرامي بالأسهم اليمنى وزر «اختباء». يُسجن الحرامي 10 ثوانٍ فقط في كل جولة.</string>\n    <string name="controls_toggle">الأزرار</string>\n    <string name="thief_hide">اختباء</string>\n    <string name="thief_hide_wait">اختباء (%1$d)</string>\n    <string name="hud_two_player">الشرطي %1$d : %2$d الحرامي</string>\n    <string name="msg_round_police">فاز الشرطي بهذه الجولة!</string>\n    <string name="s_show_controls">إظهار أزرار التحكم (الأسهم وزر الاختباء) على الشاشة</string>\n    <string name="s_show_controls_hint">يمكن إخفاؤها لمن يستخدم لوحة مفاتيح أو يد تحكم: الأسهم للشرطي، وWASD للحرامي، والمسافة للاختباء.</string>
+    <string name="net_main_btn">لعب مع صديق على هاتف آخر</string>
+    <string name="net_title">اللعب بين هاتفين</string>
+    <string name="net_intro">يلعب طفلان كلٌّ على هاتفه: واحد الشرطي والآخر الحرامي، واللعبة مشتركة بينهما. اختر طريقة الاتصال: واي فاي، أو بلوتوث، أو رمز QR.</string>
+    <string name="net_privacy_note">الاتصال مباشر بين الهاتفين فقط: بلا خادم ولا حسابات، ولا تُرسل أي بيانات إلى أي جهة.</string>
+    <string name="net_host_section">أنشئ غرفة</string>
+    <string name="net_role_police">أنا الشرطي (والصديق الحرامي)</string>
+    <string name="net_role_thief">أنا الحرامي (والصديق الشرطي)</string>
+    <string name="net_host_btn">إنشاء غرفة</string>
+    <string name="net_stop_host">إلغاء الغرفة</string>
+    <string name="net_waiting_fmt">الرمز: %1$s
+العنوان: %2$s
+بانتظار صديقك…</string>
+    <string name="net_no_wifi">اتصل بشبكة واي فاي أو شغّل نقطة اتصال أولاً.</string>
+    <string name="net_join_section">انضم إلى غرفة</string>
+    <string name="net_search">ابحث عن غرف</string>
+    <string name="net_searching">جارٍ البحث… اضغط على الغرفة عندما تظهر.</string>
+    <string name="net_room_fmt">%1$s — صاحبها يلعب %2$s وأنت %3$s</string>
+    <string name="net_enter_code">اكتب رمز الغرفة (4 أرقام) الظاهر على هاتف صديقك</string>
+    <string name="net_manual">إدخال العنوان يدوياً</string>
+    <string name="net_ip_hint">عنوان هاتف المضيف (مثل 192.168.1.5)</string>
+    <string name="net_code_hint">الرمز: 4 أرقام</string>
+    <string name="net_join">انضمام</string>
+    <string name="net_connecting">جارٍ الاتصال…</string>
+    <string name="net_lost">انقطع الاتصال بالهاتف الآخر</string>
+    <string name="net_room_name">غرفة الحرامي الشبح</string>
+    <string name="net_role_title">اختر دورك إذا كنت أنت من ينشئ الغرفة (الضيف يأخذ الدور الآخر تلقائياً)</string>
+    <string name="net_mode_title">طريقة الاتصال</string>
+    <string name="net_mode_wifi">واي فاي</string>
+    <string name="net_mode_bt">بلوتوث</string>
+    <string name="net_mode_qr">رمز QR</string>
+    <string name="bt_hint">الهاتفان يجب أن يكونا مقترنين (Paired) في إعدادات البلوتوث أولاً. صاحب الغرفة ينشئها، والآخر يختار هاتفه من القائمة.</string>
+    <string name="bt_pair_btn">اقتران هاتف جديد (إعدادات البلوتوث)</string>
+    <string name="bt_waiting">بانتظار صديقك عبر البلوتوث…\nيجب أن يكون هاتفه مقترناً بهذا الهاتف.</string>
+    <string name="bt_show_devices">اعرض الأجهزة المقترنة</string>
+    <string name="bt_device_fmt">اتصل بـ %1$s</string>
+    <string name="bt_no_paired">لا توجد أجهزة مقترنة. اضغط «اقتران هاتف جديد» أولاً.</string>
+    <string name="bt_unavailable">البلوتوث غير متاح على هذا الهاتف.</string>
+    <string name="bt_turn_on">شغّل البلوتوث ثم حاول مرة أخرى.</string>
+    <string name="bt_perm_denied">لا يعمل اللعب بالبلوتوث بدون إذن «الأجهزة القريبة». يمكنك استخدام الواي فاي أو QR.</string>
+    <string name="qr_hint">صاحب الغرفة يعرض الرمز والآخر يمسحه فيدخل فوراً بلا كتابة. الهاتفان يجب أن يكونا على نفس الشبكة (واي فاي أو نقطة اتصال أحدهما).</string>
+    <string name="qr_waiting_fmt">اطلب من صديقك مسح هذا الرمز\n(الرمز: %1$s — العنوان: %2$s)</string>
+    <string name="qr_scan_btn">امسح رمز QR</string>
+    <string name="qr_invalid">هذا الرمز ليس رمز غرفة للعبة، أو ليس على شبكة محلية.</string>
+    <string name="qr_scan_failed">تعذّر فتح الماسح. استخدم الواي فاي مع الإدخال اليدوي.</string>
+    <string name="role_name_police">الشرطي</string>
+    <string name="role_name_thief">الحرامي</string>
 </resources>

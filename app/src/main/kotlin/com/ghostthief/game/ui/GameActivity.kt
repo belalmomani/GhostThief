@@ -15,6 +15,10 @@ import com.ghostthief.game.floating.AndroidOverlayEnvironment
 import com.ghostthief.game.floating.FloatingService
 import com.ghostthief.game.game.GameEngine
 import com.ghostthief.game.game.GameView
+import com.ghostthief.game.game.NetForwardingListener
+import com.ghostthief.game.net.NetProtocol
+import com.ghostthief.game.net.NetSession
+import com.ghostthief.game.net.Packet
 import com.google.android.material.button.MaterialButton
 
 class GameActivity : BaseActivity() {
@@ -35,10 +39,23 @@ class GameActivity : BaseActivity() {
         }
     }
     private var kid = false
+    /** لعب عبر الشبكة: هاتف آخر يلعب الدور الثاني. */
+    private var net = false
+    private var lastDx = 0f
+    private var lastDy = 0f
+    private val netTicker = object : Runnable {
+        override fun run() {
+            if (!NetSession.active()) { onNetLost(); return }
+            if (NetSession.isHost) hostTick() else clientTick()
+            handler.postDelayed(this, 33)
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         kid = intent.getBooleanExtra(EXTRA_KID, false)
+        net = intent.getBooleanExtra(EXTRA_NET, false)
+        if (net && !NetSession.active()) { finish(); return } // لا توجد جلسة شبكة صالحة
         if (kid) enableLockScreenPlay()
         setContentView(R.layout.activity_game)
         app = GhostThiefApp.of(this)
@@ -71,6 +88,7 @@ class GameActivity : BaseActivity() {
             app.settings.showControls = !app.settings.showControls // إظهار الأزرار اختياري
             refreshControls()
         }
+        if (net) setupNet()
         refreshControls()
         findViewById<MaterialButton>(R.id.btnToggleJail).setOnClickListener {
             app.settings.jailVisible = !app.settings.jailVisible // إخفاء مؤقت لا يلغي حالة القبض
@@ -80,7 +98,7 @@ class GameActivity : BaseActivity() {
             override fun handleOnBackPressed() = leave()
         })
 
-        if (!kid) { // لا إعلانات في وضع الطفل (فوق شاشة القفل)
+        if (!kid && !net) { // لا إعلانات في وضع الطفل ولا في اللعب الشبكي
             val container = findViewById<ViewGroup>(R.id.adContainer)
             app.ads.init(this)
             app.ads.attachBanner(container)
@@ -99,9 +117,12 @@ class GameActivity : BaseActivity() {
         com.ghostthief.game.game.LootLoader.loadAsync(this, app.settings) { engine.loots = it }
         gameView.start()
         refreshControls()
+        if (net) { handler.removeCallbacks(netTicker); handler.post(netTicker) }
     }
 
     override fun onPause() {
+        if (!::engine.isInitialized) { super.onPause(); return }
+        handler.removeCallbacks(netTicker)
         engine.policeDirection(0f, 0f) // يتوقف الشرطي عند مغادرة الشاشة
         handler.removeCallbacks(hideButtonTicker)
         engine.thiefDirection(0f, 0f)
@@ -112,7 +133,9 @@ class GameActivity : BaseActivity() {
     }
 
     override fun onDestroy() {
-        if (!kid) app.ads.detachBanner()
+        if (!::engine.isInitialized) { super.onDestroy(); return }
+        if (net) NetSession.end()
+        if (!kid && !net) app.ads.detachBanner()
         super.onDestroy()
     }
 
@@ -124,21 +147,24 @@ class GameActivity : BaseActivity() {
     /** يظهر/يخفي لوحات الأسهم وزر الاختباء بحسب الأوضاع وخيار «إظهار الأزرار». */
     private fun refreshControls() {
         val show = app.settings.showControls
-        padView.visibility = if (engine.policeActive && show) View.VISIBLE else View.GONE
-        padView2.visibility = if (engine.twoPlayer && show) View.VISIBLE else View.GONE
-        btnThiefHide.visibility = if (engine.twoPlayer && show) View.VISIBLE else View.GONE
+        // في اللعب الشبكي يرى كل هاتف لوحة دوره فقط
+        val police = if (net) NetSession.myRole == NetProtocol.ROLE_POLICE else engine.policeActive
+        val thief = if (net) NetSession.myRole == NetProtocol.ROLE_THIEF else engine.twoPlayer
+        padView.visibility = if (police && show) View.VISIBLE else View.GONE
+        padView2.visibility = if (thief && show) View.VISIBLE else View.GONE
+        btnThiefHide.visibility = if (thief && show) View.VISIBLE else View.GONE
         btnPolice.text = getString(if (engine.policeMode) R.string.police_toggle_on else R.string.police_toggle)
         btnTwoPlayer.text = getString(if (engine.twoPlayer) R.string.two_player_on else R.string.two_player)
         if (padView.visibility == View.VISIBLE) padView.start() else padView.pause()
         if (padView2.visibility == View.VISIBLE) padView2.start() else padView2.pause()
         if (!show) { engine.policeDirection(0f, 0f); engine.thiefDirection(0f, 0f) }
         handler.removeCallbacks(hideButtonTicker)
-        if (engine.twoPlayer && show) handler.post(hideButtonTicker)
+        if (thief && show) handler.post(hideButtonTicker)
     }
 
     private fun updateHideButton() {
-        val cd = engine.brain.hideCooldownSeconds
-        btnThiefHide.isEnabled = engine.brain.hideReady
+        val cd = engine.thiefHideCooldown()
+        btnThiefHide.isEnabled = engine.thiefHideReady()
         btnThiefHide.text = if (cd > 0.05f) getString(R.string.thief_hide_wait, Math.ceil(cd.toDouble()).toInt()) else getString(R.string.thief_hide)
     }
 
@@ -158,6 +184,12 @@ class GameActivity : BaseActivity() {
             android.view.KeyEvent.ACTION_UP -> held.remove(code)
         }
         fun axis(neg: Int, pos: Int) = (if (pos in held) 1f else 0f) - (if (neg in held) 1f else 0f)
+        if (net) { // كل هاتف يتحكم بدوره فقط (الأسهم أو WASD)
+            val kx = (axis(android.view.KeyEvent.KEYCODE_DPAD_LEFT, android.view.KeyEvent.KEYCODE_DPAD_RIGHT) + axis(android.view.KeyEvent.KEYCODE_A, android.view.KeyEvent.KEYCODE_D)).coerceIn(-1f, 1f)
+            val ky = (axis(android.view.KeyEvent.KEYCODE_DPAD_UP, android.view.KeyEvent.KEYCODE_DPAD_DOWN) + axis(android.view.KeyEvent.KEYCODE_W, android.view.KeyEvent.KEYCODE_S)).coerceIn(-1f, 1f)
+            if (NetSession.myRole == NetProtocol.ROLE_POLICE) engine.policeDirection(kx, ky) else engine.thiefDirection(kx, ky)
+            return true
+        }
         engine.policeDirection(axis(android.view.KeyEvent.KEYCODE_DPAD_LEFT, android.view.KeyEvent.KEYCODE_DPAD_RIGHT), axis(android.view.KeyEvent.KEYCODE_DPAD_UP, android.view.KeyEvent.KEYCODE_DPAD_DOWN))
         engine.thiefDirection(axis(android.view.KeyEvent.KEYCODE_A, android.view.KeyEvent.KEYCODE_D), axis(android.view.KeyEvent.KEYCODE_W, android.view.KeyEvent.KEYCODE_S))
         return true
@@ -165,6 +197,7 @@ class GameActivity : BaseActivity() {
 
     /** الخروج هو نقطة الانتقال الطبيعية الوحيدة التي قد يظهر عندها إعلان بيني. */
     private fun leave() {
+        if (net) { NetSession.end(); finish(); return }
         if (kid) { // الخروج من وضع الطفل يحتاج رمز الأهل
             PinDialogs.ask(this, app.parentLock) { unpinScreen(); finish() }
             return
@@ -187,7 +220,49 @@ class GameActivity : BaseActivity() {
     private fun pinScreen() { try { startLockTask() } catch (_: Throwable) {} }
     private fun unpinScreen() { try { stopLockTask() } catch (_: Throwable) {} }
 
+    // ---- لعب عبر الشبكة ----
+    private fun setupNet() {
+        btnPolice.visibility = View.GONE
+        btnTwoPlayer.visibility = View.GONE
+        if (NetSession.isHost) {
+            engine.setTwoPlayer(true)
+            engine.listener = NetForwardingListener(gameView) { NetSession.send(it) } // يرسل الأصوات والرسائل للضيف
+        } else {
+            engine.remoteClient = true
+            engine.inputSink = { _, dx, dy -> lastDx = dx; lastDy = dy; NetSession.send(Packet.Input(dx, dy, false)) }
+            engine.hideSink = { NetSession.send(Packet.Input(lastDx, lastDy, true)) }
+        }
+    }
+
+    private fun hostTick() {
+        val remoteRole = NetProtocol.otherRole(NetSession.myRole)
+        if (remoteRole == NetProtocol.ROLE_THIEF) {
+            engine.thiefDirection(NetSession.remoteDx, NetSession.remoteDy)
+            if (NetSession.takeHide()) engine.thiefHide()
+        } else {
+            engine.policeDirection(NetSession.remoteDx, NetSession.remoteDy)
+        }
+        NetSession.send(engine.toSnapshot())
+    }
+
+    private fun clientTick() {
+        NetSession.takeSnapshot()?.let { engine.applyRemoteSnapshot(it) }
+        while (true) {
+            val ev = NetSession.events.poll() ?: break
+            engine.deliverRemoteEvent(ev)
+        }
+    }
+
+    private fun onNetLost() {
+        android.widget.Toast.makeText(this, R.string.net_lost, android.widget.Toast.LENGTH_LONG).show()
+        if (NetSession.isHost) engine.setTwoPlayer(false)
+        NetSession.end()
+        finish()
+    }
+
     companion object {
+        private const val EXTRA_NET = "net"
+        fun netIntent(ctx: Context): Intent = Intent(ctx, GameActivity::class.java).putExtra(EXTRA_NET, true)
         private const val EXTRA_KID = "kid"
         fun intent(ctx: Context, kid: Boolean = false): Intent = Intent(ctx, GameActivity::class.java).putExtra(EXTRA_KID, kid)
     }

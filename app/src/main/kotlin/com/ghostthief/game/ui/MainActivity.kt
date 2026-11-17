@@ -49,6 +49,9 @@ class MainActivity : BaseActivity() {
         }
         findViewById<MaterialButton>(R.id.btnKid).setOnClickListener { startKidMode() }
         findViewById<MaterialButton>(R.id.btnAchievements).setOnClickListener { showAchievements() }
+        findViewById<MaterialButton>(R.id.btnNetwork).setOnClickListener {
+            PinDialogs.ask(this, app.parentLock) { startActivity(Intent(this, MultiplayerActivity::class.java)) } // الشبكة المحلية: يحميها رمز الأهل
+        }
         findViewById<MaterialButton>(R.id.btnGarage).setOnClickListener { startActivity(Intent(this, GarageActivity::class.java)) }
         if (!app.settings.onboardingDone) startActivity(Intent(this, OnboardingActivity::class.java))
         findViewById<MaterialButton>(R.id.btnPrivacy).setOnClickListener { TextPageActivity.open(this, TextPageActivity.PRIVACY) }

@@ -8,6 +8,11 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- اللعب بالبلوتوث (الأجهزة المقترنة فقط، بلا بحث ولا موقع) -->
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
 
     <!-- لرؤية التطبيقات القابلة للتشغيل فقط (لاختيارها كغنائم تمثيلية بموافقتك). لا نستخدم QUERY_ALL_PACKAGES. -->
     <queries>
@@ -32,10 +37,18 @@
             </intent-filter>
         </activity>
         <activity android:name=".ui.OnboardingActivity" android:exported="false" />
-        <activity android:name=".ui.GameActivity" android:exported="false" />
+        <!-- configChanges: تدوير الشاشة لا يعيد إنشاء الشاشة فلا ينقطع اللعب الشبكي -->
+        <activity
+            android:name=".ui.GameActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden|uiMode" />
         <activity android:name=".ui.GarageActivity" android:exported="false" />
+        <activity android:name=".ui.MultiplayerActivity" android:exported="false" />
         <activity android:name=".ui.SettingsActivity" android:exported="false" />
         <activity android:name=".ui.TextPageActivity" android:exported="false" />
+
+        <!-- ماسح QR من خدمات Google Play (بلا إذن كاميرا): تنزيل مسبق لوحدة الماسح -->
+        <meta-data android:name="com.google.mlkit.vision.DEPENDENCIES" android:value="barcode_ui" />
 
         <service
             android:name=".floating.FloatingService"

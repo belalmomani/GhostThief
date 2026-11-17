@@ -688,10 +688,10 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
                 c.drawRoundRect(RectF(dst.left - 3f * density, dst.top - 3f * density, dst.right + 3f * density, dst.bottom + 3f * density), 10f * density, 10f * density, p)
                 p.style = Paint.Style.FILL
             } else drawSleepZ(c, e, l, t, w, h)
-            if (e.settings.showJailTimer && e.jail.isJailed) {
+            if (e.settings.showJailTimer && e.jailTimerActive()) {
                 textPaint.textSize = 13f * density; textPaint.color = Color.WHITE
                 textPaint.setShadowLayer(3f * density, 0f, 0f, Color.BLACK)
-                c.drawText(JailTimer.format(e.jail.remainingMillis()), l + w / 2f, t + h + 14f * density, textPaint)
+                c.drawText(JailTimer.format(e.jailRemainingMillis()), l + w / 2f, t + h + 14f * density, textPaint)
                 textPaint.clearShadowLayer()
             }
         } else if (st == ThiefState.CAUGHT && e.brain.stateTime > 0.75f) {

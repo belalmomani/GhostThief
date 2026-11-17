@@ -538,6 +538,37 @@ class ThiefBrain(
         return true
     }
 
+    // ---- لعب عبر الشبكة: المضيف يكتب لقطة، والهاتف الآخر يطبّقها ويرسم منها ----
+    private var remoteTx = 0f
+    private var remoteTy = 0f
+
+    fun writeSnapshot(f: FloatArray, i: IntArray) {
+        f[NetIdx.F_THIEF_X] = x / arenaW; f[NetIdx.F_THIEF_Y] = y / arenaH
+        f[NetIdx.F_THIEF_STATE_TIME] = stateTime; f[NetIdx.F_THIEF_ALPHA] = alpha; f[NetIdx.F_THIEF_SCALE] = scale
+        f[NetIdx.F_HIDE_FOLDER_ALPHA] = hideFolderAlpha; f[NetIdx.F_HIDE_X] = hideX / arenaW; f[NetIdx.F_HIDE_Y] = hideY / arenaH
+        f[NetIdx.F_RUN_CLOCK] = runClock; f[NetIdx.F_IN_X] = inX; f[NetIdx.F_IN_Y] = inY; f[NetIdx.F_HIDE_COOLDOWN] = hideCooldown
+        i[NetIdx.I_THIEF_STATE] = state.ordinal; i[NetIdx.I_THIEF_FACING] = facing; i[NetIdx.I_HIDE_VARIANT] = hideVariant
+        i[NetIdx.I_HIDE_READY] = if (hideReady) 1 else 0
+    }
+
+    /** يطبّق لقطة قادمة من المضيف. الموضع يُنعَّم تدريجياً عبر [remoteStep]. */
+    fun applyRemote(f: FloatArray, i: IntArray) {
+        state = ThiefState.values().getOrElse(i[NetIdx.I_THIEF_STATE]) { state }
+        stateTime = f[NetIdx.F_THIEF_STATE_TIME]; alpha = f[NetIdx.F_THIEF_ALPHA]; scale = f[NetIdx.F_THIEF_SCALE]
+        hideFolderAlpha = f[NetIdx.F_HIDE_FOLDER_ALPHA]; hideX = f[NetIdx.F_HIDE_X] * arenaW; hideY = f[NetIdx.F_HIDE_Y] * arenaH
+        runClock = f[NetIdx.F_RUN_CLOCK]; inX = f[NetIdx.F_IN_X]; inY = f[NetIdx.F_IN_Y]; hideCooldown = f[NetIdx.F_HIDE_COOLDOWN]
+        facing = if (i[NetIdx.I_THIEF_FACING] >= 0) 1 else -1
+        hideVariant = i[NetIdx.I_HIDE_VARIANT]
+        val nx = f[NetIdx.F_THIEF_X] * arenaW; val ny = f[NetIdx.F_THIEF_Y] * arenaH
+        if (hypot(nx - x, ny - y) > 0.35f * minOf(arenaW, arenaH)) { x = nx; y = ny } // قفزة كبيرة (ظهور جديد): بلا انزلاق
+        remoteTx = nx; remoteTy = ny
+    }
+
+    fun remoteStep(dt: Float) {
+        val k = minOf(1f, 14f * dt)
+        x += (remoteTx - x) * k; y += (remoteTy - y) * k
+    }
+
     fun currentStateDuration() = stateDuration
 
     companion object {

@@ -257,4 +257,43 @@ class PoliceSquad(@Suppress("unused") private val rnd: Random = Random.Default) 
         ox = ox.coerceIn(30f, (arenaW - 30f).coerceAtLeast(30f))
         oy = oy.coerceIn(minY + 40f, (arenaH - 20f).coerceAtLeast(minY + 40f))
     }
+
+    // ---- لعب عبر الشبكة ----
+    private var rOx = 0f; private var rOy = 0f; private var rCx = 0f; private var rCy = 0f
+
+    fun writeSnapshot(f: FloatArray, i: IntArray) {
+        f[NetIdx.F_OFF_X] = ox / arenaW; f[NetIdx.F_OFF_Y] = oy / arenaH; f[NetIdx.F_OFF_SCALE] = officerScale
+        f[NetIdx.F_WALK_CLOCK] = walkClock; f[NetIdx.F_SPEED_RATIO] = speedRatio; f[NetIdx.F_DIR_X] = dirX; f[NetIdx.F_DIR_Y] = dirY
+        f[NetIdx.F_CAR_X] = cx / arenaW; f[NetIdx.F_CAR_Y] = cy / arenaH; f[NetIdx.F_LIGHTS_CLOCK] = lightsClock
+        f[NetIdx.F_CAR_SPEED] = carSpeed; f[NetIdx.F_STAGE_TIME] = stageTime
+        f[NetIdx.F_SQ_THIEF_X] = thiefX / arenaW; f[NetIdx.F_SQ_THIEF_Y] = thiefY / arenaH; f[NetIdx.F_SQ_THIEF_SCALE] = thiefScale
+        i[NetIdx.I_OFF_FACING] = ofacing; i[NetIdx.I_OFF_VISIBLE] = if (officerVisible) 1 else 0; i[NetIdx.I_OFF_MOVING] = if (moving) 1 else 0
+        i[NetIdx.I_CAR_FACING] = cfacing; i[NetIdx.I_CAR_VISIBLE] = if (carVisible) 1 else 0; i[NetIdx.I_STAGE] = stage.ordinal
+        i[NetIdx.I_SQ_THIEF_VISIBLE] = if (thiefVisible) 1 else 0; i[NetIdx.I_OFFICER_BOARDS] = if (officerBoards) 1 else 0
+    }
+
+    fun applyRemote(f: FloatArray, i: IntArray) {
+        officerScale = f[NetIdx.F_OFF_SCALE]; walkClock = f[NetIdx.F_WALK_CLOCK]; speedRatio = f[NetIdx.F_SPEED_RATIO]
+        dirX = f[NetIdx.F_DIR_X]; dirY = f[NetIdx.F_DIR_Y]; lightsClock = f[NetIdx.F_LIGHTS_CLOCK]
+        carSpeed = f[NetIdx.F_CAR_SPEED]; stageTime = f[NetIdx.F_STAGE_TIME]
+        thiefX = f[NetIdx.F_SQ_THIEF_X] * arenaW; thiefY = f[NetIdx.F_SQ_THIEF_Y] * arenaH; thiefScale = f[NetIdx.F_SQ_THIEF_SCALE]
+        ofacing = if (i[NetIdx.I_OFF_FACING] >= 0) 1 else -1
+        officerVisible = i[NetIdx.I_OFF_VISIBLE] == 1; moving = i[NetIdx.I_OFF_MOVING] == 1
+        cfacing = if (i[NetIdx.I_CAR_FACING] >= 0) 1 else -1
+        carVisible = i[NetIdx.I_CAR_VISIBLE] == 1
+        stage = PoliceStage.values().getOrElse(i[NetIdx.I_STAGE]) { stage }
+        thiefVisible = i[NetIdx.I_SQ_THIEF_VISIBLE] == 1; officerBoards = i[NetIdx.I_OFFICER_BOARDS] == 1
+        val nox = f[NetIdx.F_OFF_X] * arenaW; val noy = f[NetIdx.F_OFF_Y] * arenaH
+        val ncx = f[NetIdx.F_CAR_X] * arenaW; val ncy = f[NetIdx.F_CAR_Y] * arenaH
+        val big = 0.35f * minOf(arenaW, arenaH)
+        if (hypot(nox - ox, noy - oy) > big) { ox = nox; oy = noy }
+        if (hypot(ncx - cx, ncy - cy) > big * 2f) { cx = ncx; cy = ncy }
+        rOx = nox; rOy = noy; rCx = ncx; rCy = ncy
+    }
+
+    fun remoteStep(dt: Float) {
+        val k = minOf(1f, 14f * dt)
+        ox += (rOx - ox) * k; oy += (rOy - oy) * k
+        cx += (rCx - cx) * k; cy += (rCy - cy) * k
+    }
 }
